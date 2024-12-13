@@ -28,11 +28,13 @@ Install using Go (WIP, not functional yet):
 
 ### CLI Tool
 
+```bash
 `docktrine containers list` # List containers
 `docktrine containers start <id>` # Start container
 `docktrine containers stop <id>` # Stop container
 `docktrine containers restart <id>` # Restart container
 `docktrine interactive` # Interactive mode
+```
 
 ### Configuration
 
