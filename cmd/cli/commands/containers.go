@@ -9,6 +9,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	listCmd    *cobra.Command
+	startCmd   *cobra.Command
+	stopCmd    *cobra.Command
+	restartCmd *cobra.Command
+)
+
+func handleError(resp *http.Response) error {
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		var errorResponse map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&errorResponse); err != nil {
+			return fmt.Errorf("HTTP %d: %v", resp.StatusCode, err)
+		}
+		return fmt.Errorf("%v", errorResponse["error"])
+	}
+	return nil
+}
 
 func init() {	
 	containersCmd := &cobra.Command{
@@ -16,8 +35,7 @@ func init() {
 		Short: "Manage Docker containers",
 	}
 
-
-	listCmd := &cobra.Command{
+	listCmd = &cobra.Command{
 		Use:   "list",
 		Short: "List all containers",
 		Run: func(cmd *cobra.Command, args []string) {
@@ -31,7 +49,11 @@ func init() {
 				fmt.Printf("Error: %v\n", err)
 				return
 			}
-			defer resp.Body.Close()
+
+			if err := handleError(resp); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				return
+			}
 
 			var containers []map[string]interface{}
 			if err := json.NewDecoder(resp.Body).Decode(&containers); err != nil {
@@ -48,7 +70,7 @@ func init() {
 		},
 	}
 
-	startCmd := &cobra.Command{
+	startCmd = &cobra.Command{
 		Use:   "start [container-id]",
 		Short: "Start a container",
 		Args:  cobra.ExactArgs(1),
@@ -62,12 +84,17 @@ func init() {
 				fmt.Printf("Error: %v\n", err)
 				return
 			}
+			
+			if err := handleError(resp); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				return
+			}
+			
 			fmt.Printf("Container %s started\n", args[0])
-			resp.Body.Close()
 		},
 	}
 
-	stopCmd := &cobra.Command{
+	stopCmd = &cobra.Command{
 		Use:   "stop [container-id]",
 		Short: "Stop a container",
 		Args:  cobra.ExactArgs(1),
@@ -81,12 +108,18 @@ func init() {
 				fmt.Printf("Error: %v\n", err)
 				return
 			}
+
+			if err := handleError(resp); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				return
+			}
+
 			fmt.Printf("Container %s stopped\n", args[0])
 			resp.Body.Close()
 		},
 	}
 
-	restartCmd := &cobra.Command{
+	restartCmd = &cobra.Command{
 		Use:   "restart [container-id]",
 		Short: "Restart a container",
 		Args:  cobra.ExactArgs(1),
@@ -106,6 +139,12 @@ func init() {
 				fmt.Printf("Error: %v\n", err)
 				return
 			}
+
+			if err := handleError(resp); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				return
+			}
+
 			fmt.Printf("Container %s restarted\n", args[0])
 			resp.Body.Close()
 		},
