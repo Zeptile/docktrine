@@ -4,6 +4,7 @@ import (
 	"github.com/Zeptile/docktrine/cmd/api/handlers"
 	"github.com/Zeptile/docktrine/cmd/api/middleware"
 	_ "github.com/Zeptile/docktrine/docs"
+	"github.com/Zeptile/docktrine/internal/database"
 	"github.com/Zeptile/docktrine/internal/logger"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/swagger"
@@ -17,11 +18,17 @@ import (
 func main() {
 	logger.Init()
 
+	db, err := database.NewDatabaseConnection()
+	if err != nil {
+		logger.Fatal(err, "Failed to initialize database")
+	}
+	defer db.Close()
+
 	app := fiber.New()
 	
 	app.Use(middleware.RequestLogger())
 	
-	handler := handlers.NewHandler()
+	handler := handlers.NewHandler(db)
 	
 	logger.Info("Setting up routes...")
 	app.Get("/swagger/*", swagger.HandlerDefault)

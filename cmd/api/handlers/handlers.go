@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 
+	"github.com/Zeptile/docktrine/internal/database"
 	"github.com/Zeptile/docktrine/internal/docker"
 	"github.com/Zeptile/docktrine/internal/logger"
 	"github.com/gofiber/fiber/v2"
@@ -10,10 +11,14 @@ import (
 
 type Handler struct {
 	docker *docker.DockerClient
+	db     *database.DB
 }
 
-func NewHandler() *Handler {
-	return &Handler{}
+func NewHandler(db *database.DB) *Handler {
+	return &Handler{
+		docker: docker.NewDockerClient(db),
+		db:     db,
+	}
 }
 
 // ListContainers godoc

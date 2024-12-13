@@ -5,45 +5,43 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Zeptile/docktrine/internal/database"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	"github.com/gofiber/fiber/v2"
 )
 
-type DockerClient struct {}
+type DockerClient struct {
+	db *database.DB
+}
 
+func NewDockerClient(db *database.DB) *DockerClient {
+	return &DockerClient{
+		db: db,
+	}
+}
 
 func (d *DockerClient) newClient(serverName string) (*client.Client, error) {
-	var foundServer *ServerConfig
-	var defaultServer *ServerConfig
-	config, err := LoadConfig("config.json")
+	var server *database.Server
+	var err error
+
+	if serverName != "" {
+		server, err = d.db.GetServerByName(serverName)
+	} else {
+		server, err = d.db.GetDefaultServer()
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
-	for _, server := range config.Servers {
-		if serverName != "" && server.Name == serverName {
-			foundServer = &server
-			break
-		}
-
-		if server.Default {
-			defaultServer = &server
-		}
-	}
-
-	if serverName == "" {
-		foundServer = defaultServer
-	}
-
-	if foundServer == nil {
+	if server == nil {
 		return nil, fmt.Errorf("server not found")
 	}
 
-
 	return client.NewClientWithOpts(
-		client.WithHost(foundServer.Host),
+		client.WithHost(server.Host),
 		client.WithAPIVersionNegotiation(),
 		client.WithTimeout(5*time.Second),
 	)
