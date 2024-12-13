@@ -2,9 +2,9 @@ package main
 
 import (
 	"github.com/Zeptile/docktrine/cmd/api/handlers"
+	"github.com/Zeptile/docktrine/cmd/api/middleware"
 	_ "github.com/Zeptile/docktrine/docs"
 	"github.com/Zeptile/docktrine/internal/logger"
-	"github.com/Zeptile/docktrine/internal/middleware"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/swagger"
 )
@@ -15,12 +15,10 @@ import (
 // @host localhost:3000
 // @BasePath /
 func main() {
-	// Initialize logger
 	logger.Init()
 
 	app := fiber.New()
 	
-	// Add request logger middleware
 	app.Use(middleware.RequestLogger())
 	
 	handler := handlers.NewHandler()
