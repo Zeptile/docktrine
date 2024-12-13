@@ -121,6 +121,7 @@ func executor(input string) {
 func completer(d prompt.Document) []prompt.Suggest {
 	suggestions := []prompt.Suggest{
 		{Text: "containers", Description: "Container management commands"},
+		{Text: "server", Description: "Show or switch server"},
 		{Text: "help", Description: "Show help"},
 		{Text: "exit", Description: "Exit interactive mode"},
 	}
