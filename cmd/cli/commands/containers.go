@@ -17,8 +17,6 @@ var (
 )
 
 func handleError(resp *http.Response) error {
-	defer resp.Body.Close()
-	
 	if resp.StatusCode != http.StatusOK {
 		var errorResponse map[string]interface{}
 		if err := json.NewDecoder(resp.Body).Decode(&errorResponse); err != nil {
@@ -49,6 +47,7 @@ func init() {
 				fmt.Printf("Error: %v\n", err)
 				return
 			}
+			defer resp.Body.Close()
 
 			if err := handleError(resp); err != nil {
 				fmt.Printf("Error: %v\n", err)
@@ -84,6 +83,7 @@ func init() {
 				fmt.Printf("Error: %v\n", err)
 				return
 			}
+			defer resp.Body.Close()
 			
 			if err := handleError(resp); err != nil {
 				fmt.Printf("Error: %v\n", err)
@@ -108,6 +108,7 @@ func init() {
 				fmt.Printf("Error: %v\n", err)
 				return
 			}
+			defer resp.Body.Close()
 
 			if err := handleError(resp); err != nil {
 				fmt.Printf("Error: %v\n", err)
@@ -115,7 +116,6 @@ func init() {
 			}
 
 			fmt.Printf("Container %s stopped\n", args[0])
-			resp.Body.Close()
 		},
 	}
 
@@ -139,6 +139,7 @@ func init() {
 				fmt.Printf("Error: %v\n", err)
 				return
 			}
+			defer resp.Body.Close()
 
 			if err := handleError(resp); err != nil {
 				fmt.Printf("Error: %v\n", err)
@@ -146,7 +147,6 @@ func init() {
 			}
 
 			fmt.Printf("Container %s restarted\n", args[0])
-			resp.Body.Close()
 		},
 	}
 
