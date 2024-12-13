@@ -15,11 +15,16 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /docktrine-api ./cmd/api
 
 FROM alpine:latest
 
-COPY --from=builder /docktrine-api /docktrine-api
-COPY --from=builder /app/docs /docs
+WORKDIR /app
+
+COPY --from=builder /docktrine-api /app/docktrine-api
+COPY --from=builder /app/docs /app/docs
+COPY config.json /app/config.json
 
 EXPOSE 3000
 
-VOLUME ["/var/run/docker.sock"]
+VOLUME ["/var/run/docker.sock", "/app/config"]
 
-CMD ["/docktrine-api"]
+ENV CONFIG_PATH=/app/config/config.json
+
+CMD ["/app/docktrine-api"]
