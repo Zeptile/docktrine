@@ -11,6 +11,14 @@ import (
 
 var currentServer string = server // Initialize with the global server variable
 
+func getPromptPrefix() string {
+	serverName := currentServer
+	if serverName == "" {
+		serverName = "default"
+	}
+	return fmt.Sprintf("docktrine(%s)> ", serverName)
+}
+
 func init() {
 	interactiveCmd := &cobra.Command{
 		Use:   "interactive",
@@ -21,7 +29,10 @@ func init() {
 			p := prompt.New(
 				executor,
 				completer,
-				prompt.OptionPrefix("docktrine> "),
+				prompt.OptionPrefix(getPromptPrefix()),
+				prompt.OptionLivePrefix(func() (string, bool) {
+					return getPromptPrefix(), true
+				}),
 				prompt.OptionTitle("Docktrine Interactive Shell"),
 			)
 			p.Run()
@@ -64,8 +75,8 @@ func executor(input string) {
 		fmt.Println("  containers start <id>        - Start a container")
 		fmt.Println("  containers stop <id>         - Stop a container")
 		fmt.Println("  containers restart <id>      - Restart a container")
-		fmt.Println("  server                      - Show current server")
-		fmt.Println("  server <name>               - Switch to different server")
+		fmt.Println("  server                       - Show current server")
+		fmt.Println("  server <name>                - Switch to different server")
 		fmt.Println("  help                         - Show this help")
 		fmt.Println("  exit                         - Exit interactive mode")
 		return
