@@ -61,10 +61,35 @@ func init() {
 			}
 
 			for _, container := range containers {
-				fmt.Printf("ID: %s\nName: %s\nStatus: %s\n\n", 
+				fmt.Printf("ID: %s\nName: %s\nStatus: %s\n", 
 					container["id"], 
 					container["name"], 
 					container["status"])
+				
+				if ports, ok := container["ports"].([]interface{}); ok && len(ports) > 0 {
+					fmt.Println("Ports:")
+					for _, p := range ports {
+						if port, ok := p.(map[string]interface{}); ok {
+							ip := port["IP"]
+							if ip == nil || ip == "" {
+								ip = "0.0.0.0"
+							}
+							
+							if publicPort, exists := port["PublicPort"]; exists && publicPort != 0 {
+								fmt.Printf("  %v:%v → %v/%s\n",
+									ip,
+									publicPort,
+									port["PrivatePort"],
+									port["Type"])
+							} else {
+								fmt.Printf("  %v/%s\n",
+									port["PrivatePort"],
+									port["Type"])
+							}
+						}
+					}
+				}
+				fmt.Println()
 			}
 		},
 	}
