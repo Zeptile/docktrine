@@ -67,7 +67,30 @@ func executor(input string) {
 			return
 		}
 		if len(args) == 2 {
-			currentServer = args[1]
+			// Check if server exists in cache
+			serverExists := false
+			requestedServer := args[1]
+			
+			if requestedServer == "default" {
+				currentServer = ""
+				server = currentServer
+				fmt.Println("Switched to default server")
+				return
+			}
+
+			for _, s := range cachedServers {
+				if s.Name == requestedServer {
+					serverExists = true
+					break
+				}
+			}
+
+			if !serverExists {
+				fmt.Printf("Error: server '%s' not found\n", requestedServer)
+				return
+			}
+
+			currentServer = requestedServer
 			server = currentServer
 			fmt.Printf("Switched to server: %s\n", currentServer)
 			return
