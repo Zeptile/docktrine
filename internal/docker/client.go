@@ -15,9 +15,8 @@ type DockerClient struct {}
 
 
 func (d *DockerClient) newClient(serverName string) (*client.Client, error) {
-	var targetServer *ServerConfig
 	var foundServer *ServerConfig
-
+	var defaultServer *ServerConfig
 	config, err := LoadConfig("config.json")
 	if err != nil {
 		return nil, err
@@ -28,19 +27,23 @@ func (d *DockerClient) newClient(serverName string) (*client.Client, error) {
 			foundServer = &server
 			break
 		}
+
+		if server.Default {
+			defaultServer = &server
+		}
+	}
+
+	if serverName == "" {
+		foundServer = defaultServer
 	}
 
 	if foundServer == nil {
 		return nil, fmt.Errorf("server not found")
 	}
 
-	if targetServer == nil {
-		return nil, fmt.Errorf("no server specified and no default server found")
-	}
-
 
 	return client.NewClientWithOpts(
-		client.WithHost(targetServer.Host),
+		client.WithHost(foundServer.Host),
 		client.WithAPIVersionNegotiation(),
 		client.WithTimeout(5*time.Second),
 	)
