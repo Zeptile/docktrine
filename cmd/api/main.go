@@ -40,6 +40,12 @@ func main() {
 	containers.Get("/:id", handler.GetContainer)
 	containers.Post("/restart/:id", handler.RestartContainer)
 	
+	servers := app.Group("/servers")
+	servers.Get("/", handler.ListServers)
+	servers.Get("/:name", handler.GetServer)
+	servers.Post("/", handler.CreateServer)
+	servers.Delete("/:name", handler.DeleteServer)
+	
 	logger.Info("Starting server on :3000")
 	if err := app.Listen(":3000"); err != nil {
 		logger.Fatal(err, "Server failed to start")

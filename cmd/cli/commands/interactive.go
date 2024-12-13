@@ -26,6 +26,12 @@ func init() {
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Println("Docktrine Interactive Shell")
 			fmt.Println("Type 'exit' to quit, 'help' for commands")
+			
+			// Pre-fetch servers
+			if err := fetchServers(); err != nil {
+				fmt.Printf("Warning: Failed to fetch servers: %v\n", err)
+			}
+			
 			p := prompt.New(
 				executor,
 				completer,
@@ -77,6 +83,9 @@ func executor(input string) {
 		fmt.Println("  containers restart <id>      - Restart a container")
 		fmt.Println("  server                       - Show current server")
 		fmt.Println("  server <name>                - Switch to different server")
+		fmt.Println("  servers list                 - List all servers")
+		fmt.Println("  servers add                  - Add a new server")
+		fmt.Println("  servers remove <name>        - Remove a server")
 		fmt.Println("  help                         - Show this help")
 		fmt.Println("  exit                         - Exit interactive mode")
 		return
@@ -124,6 +133,31 @@ func executor(input string) {
 		default:
 			fmt.Printf("Unknown command: %s\n", cmdArgs[0])
 		}
+	case "servers":
+		if len(args) < 2 {
+			fmt.Println("Usage: servers <command> [args]")
+			return
+		}
+		
+		cmdArgs := args[1:]
+		switch cmdArgs[0] {
+		case "list":
+			listServersCmd.Run(listServersCmd, []string{})
+		case "add":
+			if len(cmdArgs) < 5 {
+				fmt.Println("Usage: servers add --name=<name> --host=<host> [--description=<desc>] [--default=<true|false>]")
+				return
+			}
+			addServerCmd.Run(addServerCmd, cmdArgs[1:])
+		case "remove":
+			if len(cmdArgs) < 2 {
+				fmt.Println("Usage: servers remove <name>")
+				return
+			}
+			removeServerCmd.Run(removeServerCmd, cmdArgs[1:])
+		default:
+			fmt.Printf("Unknown command: %s\n", cmdArgs[0])
+		}
 	default:
 		fmt.Printf("Unknown command: %s\n", args[0])
 	}
@@ -135,6 +169,7 @@ func completer(d prompt.Document) []prompt.Suggest {
 		{Text: "server", Description: "Show or switch server"},
 		{Text: "help", Description: "Show help"},
 		{Text: "exit", Description: "Exit interactive mode"},
+		{Text: "servers", Description: "Server management commands"},
 	}
 
 	if strings.HasPrefix(d.TextBeforeCursor(), "containers ") {
@@ -143,6 +178,32 @@ func completer(d prompt.Document) []prompt.Suggest {
 			{Text: "start", Description: "Start a container"},
 			{Text: "stop", Description: "Stop a container"},
 			{Text: "restart", Description: "Restart a container"},
+		}
+	}
+
+	if strings.HasPrefix(d.TextBeforeCursor(), "server ") {
+		var serverSuggestions []prompt.Suggest
+		for _, s := range cachedServers {
+			desc := s.Description
+			if desc == "" {
+				desc = s.Host
+			}
+			if s.IsDefault {
+				desc += " (default)"
+			}
+			serverSuggestions = append(serverSuggestions, prompt.Suggest{
+				Text:        s.Name,
+				Description: desc,
+			})
+		}
+		return serverSuggestions
+	}
+
+	if strings.HasPrefix(d.TextBeforeCursor(), "servers ") {
+		return []prompt.Suggest{
+			{Text: "list", Description: "List all servers"},
+			{Text: "add", Description: "Add a new server"},
+			{Text: "remove", Description: "Remove a server"},
 		}
 	}
 

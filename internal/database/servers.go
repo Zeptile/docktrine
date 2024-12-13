@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 )
 
@@ -95,4 +96,22 @@ func (db *DB) CreateServer(server *Server) error {
 	server.ID = id
 
 	return tx.Commit()
+}
+
+func (db *DB) DeleteServer(name string) error {
+	result, err := db.Exec(`DELETE FROM servers WHERE name = ?`, name)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if affected == 0 {
+		return fmt.Errorf("server not found")
+	}
+
+	return nil
 } 
