@@ -1,0 +1,22 @@
+### List all containers
+GET http://localhost:3000/containers?server=api-docker-remote
+
+### Get specific container
+GET http://localhost:3000/containers/container_id_here
+
+### Start container
+POST http://localhost:3000/containers/start/container_id_here
+
+### Stop container
+POST http://localhost:3000/containers/stop/container_id_here
+
+### Restart container
+POST http://localhost:3000/containers/restart/container_id_here
+Content-Type: application/json
+
+{
+    "pull_latest": false
+}
+
+### Swagger UI
+GET http://localhost:3000/swagger/
