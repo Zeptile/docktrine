@@ -129,6 +129,10 @@ func init() {
 				return
 			}
 
+			if err := fetchServers(); err != nil {
+				fmt.Printf("Warning: Failed to refresh server cache: %v\n", err)
+			}
+
 			fmt.Printf("Server '%s' added successfully\n", name)
 		},
 	}
@@ -160,6 +164,10 @@ func init() {
 			if err := handleError(resp); err != nil {
 				fmt.Printf("Error: %v\n", err)
 				return
+			}
+
+			if err := fetchServers(); err != nil {
+				fmt.Printf("Warning: Failed to refresh server cache: %v\n", err)
 			}
 
 			fmt.Printf("Server '%s' removed successfully\n", name)

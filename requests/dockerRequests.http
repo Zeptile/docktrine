@@ -1,5 +1,5 @@
 ### List all containers
-GET http://localhost:3000/containers?server=api-docker-remote
+GET http://localhost:3000/containers
 
 ### Get specific container
 GET http://localhost:3000/containers/container_id_here

@@ -17,7 +17,7 @@ var (
 )
 
 func handleError(resp *http.Response) error {
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var errorResponse map[string]interface{}
 		if err := json.NewDecoder(resp.Body).Decode(&errorResponse); err != nil {
 			return fmt.Errorf("HTTP %d: %v", resp.StatusCode, err)

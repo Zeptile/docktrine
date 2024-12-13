@@ -69,6 +69,16 @@ func (h *Handler) CreateServer(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "name and host are required"})
 	}
 
+	// Check if server already exists
+	existing, err := h.db.GetServerByName(server.Name)
+	if err != nil {
+		logger.Error(err, "Failed to check server existence")
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	if existing != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "server with this name already exists"})
+	}
+
 	if err := h.db.CreateServer(&server); err != nil {
 		logger.Error(err, "Failed to create server")
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})

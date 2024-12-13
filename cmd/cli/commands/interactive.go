@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var currentServer string = server // Initialize with the global server variable
+var currentServer string = server
 
 func getPromptPrefix() string {
 	serverName := currentServer
@@ -23,14 +23,11 @@ func init() {
 	interactiveCmd := &cobra.Command{
 		Use:   "interactive",
 		Short: "Start interactive shell mode",
+		PersistentPreRunE: rootCmd.PersistentPreRunE,
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Println("Docktrine Interactive Shell")
 			fmt.Println("Type 'exit' to quit, 'help' for commands")
-			
-			// Pre-fetch servers
-			if err := fetchServers(); err != nil {
-				fmt.Printf("Warning: Failed to fetch servers: %v\n", err)
-			}
+			fmt.Printf("Using API URL: %s\n", apiURL)
 			
 			p := prompt.New(
 				executor,
@@ -44,6 +41,7 @@ func init() {
 			p.Run()
 		},
 	}
+
 	rootCmd.AddCommand(interactiveCmd)
 }
 
@@ -144,11 +142,44 @@ func executor(input string) {
 		case "list":
 			listServersCmd.Run(listServersCmd, []string{})
 		case "add":
-			if len(cmdArgs) < 5 {
-				fmt.Println("Usage: servers add --name=<name> --host=<host> [--description=<desc>] [--default=<true|false>]")
+			name := prompt.Input("Enter server name: ", func(d prompt.Document) []prompt.Suggest {
+				return []prompt.Suggest{}
+			})
+			name = strings.TrimSpace(name)
+
+			host := prompt.Input("Enter server host: ", func(d prompt.Document) []prompt.Suggest {
+				return []prompt.Suggest{
+					{Text: "unix:///var/run/docker.sock", Description: "Local Docker socket"},
+					{Text: "tcp://", Description: "Remote Docker daemon"},
+				}
+			})
+			host = strings.TrimSpace(host)
+
+			desc := prompt.Input("Enter server description (optional): ", func(d prompt.Document) []prompt.Suggest {
+				return []prompt.Suggest{}
+			})
+			desc = strings.TrimSpace(desc)
+
+			isDefaultInput := prompt.Input("Set as default server? (y/N): ", func(d prompt.Document) []prompt.Suggest {
+				return []prompt.Suggest{
+					{Text: "y", Description: "Yes"},
+					{Text: "n", Description: "No"},
+				}
+			})
+			isDefault := strings.ToLower(strings.TrimSpace(isDefaultInput)) == "y"
+
+			if name == "" || host == "" {
+				fmt.Println("Error: name and host are required")
 				return
 			}
-			addServerCmd.Run(addServerCmd, cmdArgs[1:])
+
+			cmd := addServerCmd
+			cmd.Flags().Set("name", name)
+			cmd.Flags().Set("host", host)
+			cmd.Flags().Set("description", desc)
+			cmd.Flags().Set("default", fmt.Sprintf("%v", isDefault))
+			
+			cmd.Run(cmd, []string{})
 		case "remove":
 			if len(cmdArgs) < 2 {
 				fmt.Println("Usage: servers remove <name>")
