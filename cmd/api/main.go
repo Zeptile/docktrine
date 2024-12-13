@@ -1,8 +1,8 @@
 package main
 
 import (
+	"github.com/Zeptile/docktrine/cmd/api/handlers"
 	_ "github.com/Zeptile/docktrine/docs"
-	"github.com/Zeptile/docktrine/internal/api"
 	"github.com/Zeptile/docktrine/internal/logger"
 	"github.com/Zeptile/docktrine/internal/middleware"
 	"github.com/gofiber/fiber/v2"
@@ -23,8 +23,7 @@ func main() {
 	// Add request logger middleware
 	app.Use(middleware.RequestLogger())
 	
-	
-	handler := api.NewHandler()
+	handler := handlers.NewHandler()
 	
 	logger.Info("Setting up routes...")
 	app.Get("/swagger/*", swagger.HandlerDefault)

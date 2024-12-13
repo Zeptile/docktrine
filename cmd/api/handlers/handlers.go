@@ -1,4 +1,4 @@
-package api
+package handlers
 
 import (
 	"fmt"
@@ -188,4 +188,4 @@ func (h *Handler) RestartContainer(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"message": fmt.Sprintf("Container %s restarted successfully", containerID),
 	})
-}
+} 
