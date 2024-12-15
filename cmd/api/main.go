@@ -28,6 +28,10 @@ func main() {
 	
 	app.Use(middleware.RequestLogger())
 	
+	app.Get("/", func(c *fiber.Ctx) error {
+		return c.Redirect("/swagger/")
+	})
+	
 	handler := handlers.NewHandler(db)
 	
 	logger.Info("Setting up routes...")
