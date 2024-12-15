@@ -15,14 +15,15 @@ RUN swag init -g cmd/api/main.go
 
 RUN CGO_ENABLED=1 GOOS=linux go build -o /docktrine-api ./cmd/api
 
-FROM alpine:latest
+FROM --platform=linux/amd64 alpine:3.18
 
-RUN apk add --no-cache sqlite-libs
+RUN apk add --no-cache sqlite-libs libc6-compat
 
 WORKDIR /app
 
 COPY --from=builder /docktrine-api /app/docktrine-api
 COPY --from=builder /app/docs /app/docs
+RUN chmod +x /app/docktrine-api
 
 RUN mkdir -p /app/data
 
