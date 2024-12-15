@@ -170,6 +170,8 @@ func (h *Handler) GetContainer(c *fiber.Ctx) error {
 func (h *Handler) RestartContainer(c *fiber.Ctx) error {
 	containerID := c.Params("id")
 	serverName := c.Query("server", "")
+	pullLatest := c.Query("pull_latest", "false") == "true"
+
 	logger.Debug(fmt.Sprintf("Restarting container: %s", containerID))
 	
 	if containerID == "" {
@@ -179,7 +181,6 @@ func (h *Handler) RestartContainer(c *fiber.Ctx) error {
 		})
 	}
 
-	pullLatest := c.Query("pull_latest", "false") == "true"
 
 	err := h.docker.RestartContainer(containerID, serverName, pullLatest)
 	if err != nil {

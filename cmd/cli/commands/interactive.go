@@ -150,7 +150,18 @@ func executor(input string) {
 			if currentServer != "" {
 				server = currentServer
 			}
-			restartCmd.Run(restartCmd, cmdArgs[1:])
+
+			pullLatestInput := prompt.Input("Pull latest image before restart? (y/N): ", func(d prompt.Document) []prompt.Suggest {
+				return []prompt.Suggest{
+					{Text: "y", Description: "Yes"},
+					{Text: "n", Description: "No"},
+				}
+			})
+			pullLatest := strings.ToLower(strings.TrimSpace(pullLatestInput)) == "y"
+
+			cmd := restartCmd
+			cmd.Flags().Set("pull-latest", fmt.Sprintf("%v", pullLatest))
+			cmd.Run(cmd, cmdArgs[1:])
 		default:
 			fmt.Printf("Unknown command: %s\n", cmdArgs[0])
 		}

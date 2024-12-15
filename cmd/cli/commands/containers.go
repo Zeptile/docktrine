@@ -150,13 +150,18 @@ func init() {
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			uri := fmt.Sprintf("%s/containers/restart/%s", apiURL, args[0])
+			params := url.Values{}
+
 			if server != "" {
-				uri += fmt.Sprintf("?server=%s", url.QueryEscape(server))
+				params.Add("server", server)
 			}
-			
-			pullLatest, _ := cmd.Flags().GetBool("pull-latest")
-			if pullLatest {
-				uri += "&pull_latest=true"
+
+			if pullLatest, _ := cmd.Flags().GetBool("pull-latest"); pullLatest {
+				params.Add("pull_latest", "true")
+			}
+
+			if len(params) > 0 {
+				uri += "?" + params.Encode()
 			}
 			
 			resp, err := http.Post(uri, "application/json", nil)

@@ -43,7 +43,7 @@ func (d *DockerClient) newClient(serverName string) (*client.Client, error) {
 	return client.NewClientWithOpts(
 		client.WithHost(server.Host),
 		client.WithAPIVersionNegotiation(),
-		client.WithTimeout(5*time.Second),
+		client.WithTimeout(15*time.Second),
 	)
 }
 
