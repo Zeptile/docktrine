@@ -8,8 +8,9 @@ import (
 )
 
 var (
-	apiURL string
-	server string
+	apiURL  string
+	server  string
+	apiKey  string
 	rootCmd = &cobra.Command{
 		Use:   "docktrine",
 		Short: "Docktrine CLI - Manage Docker containers",
@@ -21,9 +22,20 @@ var (
 				}
 			}
 			
+			if !cmd.Flags().Changed("api-key") {
+				if envKey := os.Getenv("DOCKTRINE_API_KEY"); envKey != "" {
+					apiKey = envKey
+				}
+			}
+			
 			if apiURL == "" {
 				return fmt.Errorf("DOCKTRINE_API_URL environment variable or --api-url flag must be set")
 			}
+			
+			if apiKey == "" {
+				return fmt.Errorf("DOCKTRINE_API_KEY environment variable or --api-key flag must be set")
+			}
+			
 			return nil
 		},
 	}
@@ -36,4 +48,5 @@ func Execute() error {
 func init() {
 	rootCmd.PersistentFlags().StringVar(&apiURL, "api-url", "", "Docktrine API URL (overrides DOCKTRINE_API_URL env var)")
 	rootCmd.PersistentFlags().StringVar(&server, "server", "", "Docker server name to connect to")
+	rootCmd.PersistentFlags().StringVar(&apiKey, "api-key", "", "API Key for authentication (overrides DOCKTRINE_API_KEY env var)")
 } 

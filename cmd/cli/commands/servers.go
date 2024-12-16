@@ -55,7 +55,7 @@ func init() {
 		Use:   "list",
 		Short: "List all servers",
 		Run: func(cmd *cobra.Command, args []string) {
-			resp, err := http.Get(fmt.Sprintf("%s/servers", apiURL))
+			resp, err := makeRequest("GET", fmt.Sprintf("%s/servers", apiURL), nil)
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				return
@@ -95,29 +95,21 @@ func init() {
 			desc, _ := cmd.Flags().GetString("description")
 			isDefault, _ := cmd.Flags().GetBool("default")
 
-			if name == "" || host == "" {
-				fmt.Println("Error: name and host are required")
-				return
-			}
-
-			payload := map[string]interface{}{
+			serverData := map[string]interface{}{
 				"name":        name,
 				"host":        host,
 				"description": desc,
 				"is_default":  isDefault,
 			}
 
-			jsonData, err := json.Marshal(payload)
+			jsonData, err := json.Marshal(serverData)
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				return
 			}
 
-			resp, err := http.Post(
-				fmt.Sprintf("%s/servers", apiURL),
-				"application/json",
-				bytes.NewBuffer(jsonData),
-			)
+			resp, err := makeRequest("POST", fmt.Sprintf("%s/servers", apiURL), 
+				bytes.NewBuffer(jsonData))
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				return
@@ -129,11 +121,7 @@ func init() {
 				return
 			}
 
-			if err := fetchServers(); err != nil {
-				fmt.Printf("Warning: Failed to refresh server cache: %v\n", err)
-			}
-
-			fmt.Printf("Server '%s' added successfully\n", name)
+			fmt.Printf("Server %s added successfully\n", name)
 		},
 	}
 

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	"github.com/Zeptile/docktrine/cmd/api/handlers"
 	"github.com/Zeptile/docktrine/cmd/api/middleware"
 	_ "github.com/Zeptile/docktrine/docs"
@@ -27,6 +29,13 @@ func main() {
 	app := fiber.New()
 	
 	app.Use(middleware.RequestLogger())
+	
+	app.Use(func(c *fiber.Ctx) error {
+		if strings.HasPrefix(c.Path(), "/swagger") {
+			return c.Next()
+		}
+		return middleware.APIKeyAuth(db)(c)
+	})
 	
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.Redirect("/swagger/")

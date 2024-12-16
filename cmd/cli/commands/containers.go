@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 
@@ -27,6 +28,17 @@ func handleError(resp *http.Response) error {
 	return nil
 }
 
+func makeRequest(method, url string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, err
+	}
+	
+	req.Header.Set("X-API-Key", apiKey)
+	
+	return http.DefaultClient.Do(req)
+}
+
 func init() {	
 	containersCmd := &cobra.Command{
 		Use:   "containers",
@@ -42,7 +54,7 @@ func init() {
 				uri += fmt.Sprintf("?server=%s", url.QueryEscape(server))
 			}
 			
-			resp, err := http.Get(uri)
+			resp, err := makeRequest("GET", uri, nil)
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				return
@@ -103,7 +115,8 @@ func init() {
 			if server != "" {
 				uri += fmt.Sprintf("?server=%s", url.QueryEscape(server))
 			}
-			resp, err := http.Post(uri, "application/json", nil)
+			
+			resp, err := makeRequest("POST", uri, nil)
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				return
@@ -128,7 +141,8 @@ func init() {
 			if server != "" {
 				uri += fmt.Sprintf("?server=%s", url.QueryEscape(server))
 			}
-			resp, err := http.Post(uri, "application/json", nil)
+			
+			resp, err := makeRequest("POST", uri, nil)
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				return
@@ -164,7 +178,7 @@ func init() {
 				uri += "?" + params.Encode()
 			}
 			
-			resp, err := http.Post(uri, "application/json", nil)
+			resp, err := makeRequest("POST", uri, nil)
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				return

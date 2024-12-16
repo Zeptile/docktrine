@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/Zeptile/docktrine/internal/logger"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -55,6 +56,20 @@ func NewDatabaseConnection() (*DB, error) {
 		}
 	}
 
+	var keyCount int
+	err = database.QueryRow("SELECT COUNT(*) FROM api_keys").Scan(&keyCount)
+	if err != nil {
+		return nil, err
+	}
+
+	if keyCount == 0 {
+		apiKey, err := database.CreateAPIKey("Default API key")
+		if err != nil {
+			return nil, err
+		}
+		logger.Info("Created default API key: " + apiKey.Key)
+	}
+
 	return database, nil
 }
 
@@ -68,6 +83,13 @@ func (db *DB) createTables() error {
 			is_default BOOLEAN DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS api_keys (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			key TEXT UNIQUE NOT NULL,
+			description TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			last_used_at DATETIME
 		)`,
 	}
 
