@@ -6,6 +6,8 @@ import (
 	"github.com/Zeptile/docktrine/internal/database"
 	"github.com/Zeptile/docktrine/internal/docker"
 	"github.com/Zeptile/docktrine/internal/logger"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/go-connections/nat"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -193,5 +195,84 @@ func (h *Handler) RestartContainer(c *fiber.Ctx) error {
 	logger.Info(fmt.Sprintf("Container restarted successfully: %s", containerID))
 	return c.JSON(fiber.Map{
 		"message": fmt.Sprintf("Container %s restarted successfully", containerID),
+	})
+}
+
+// CreateContainer godoc
+// @Summary Create a container
+// @Description Create a new Docker container
+// @Tags containers
+// @Accept json
+// @Produce json
+// @Param server query string true "Server name"
+// @Param name body string true "Container name"
+// @Param image body string true "Container image"
+// @Param ports body []string false "Container ports"
+// @Param env body []string false "Container environment variables"
+// @Param volumes body []string false "Container volumes"
+// @Param auto_start body boolean false "Auto start container"
+// @Success 201 {object} interface{}
+// @Failure 400 {object} interface{}
+// @Failure 500 {object} interface{}
+// @Router /containers/create [post]
+func (h *Handler) CreateContainer(c *fiber.Ctx) error {
+	serverName := c.Query("server", "")
+	var request struct {
+		Name       string                 `json:"name"`
+		Image      string                 `json:"image"`
+		Ports      []string               `json:"ports"`
+		Env        []string               `json:"env"`
+		Volumes    []string               `json:"volumes"`
+		AutoStart  bool                   `json:"auto_start"`
+	}
+
+	if err := c.BodyParser(&request); err != nil {
+		return c.Status(400).JSON(fiber.Map{
+			"error": "invalid request body",
+		})
+	}
+
+	config := &container.Config{
+		Image: request.Image,
+		Env:   request.Env,
+	}
+
+	hostConfig := &container.HostConfig{}
+	
+	if len(request.Ports) > 0 {
+		portBindings := make(map[nat.Port][]nat.PortBinding)
+		exposedPorts := make(nat.PortSet)
+		
+		for _, p := range request.Ports {
+			binding, err := nat.ParsePortSpec(p)
+			if err != nil {
+				return c.Status(400).JSON(fiber.Map{
+					"error": fmt.Sprintf("invalid port specification: %v", err),
+				})
+			}
+			
+			for _, b := range binding {
+				portBindings[b.Port] = []nat.PortBinding{b.Binding}
+				exposedPorts[b.Port] = struct{}{}
+			}
+		}
+		
+		hostConfig.PortBindings = portBindings
+		config.ExposedPorts = exposedPorts
+	}
+
+	if len(request.Volumes) > 0 {
+		hostConfig.Binds = request.Volumes
+	}
+
+	err := h.docker.CreateContainer(serverName, config, hostConfig, request.Name)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.Status(201).JSON(fiber.Map{
+		"message": "Container created successfully",
 	})
 } 

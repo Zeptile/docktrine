@@ -34,6 +34,8 @@ func makeRequest(method, url string, body io.Reader) (*http.Response, error) {
 		return nil, err
 	}
 	
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-API-Key", apiKey)
 	
 	return http.DefaultClient.Do(req)

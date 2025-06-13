@@ -52,6 +52,7 @@ func main() {
 	containers.Post("/stop/:id", handler.StopContainer)
 	containers.Get("/:id", handler.GetContainer)
 	containers.Post("/restart/:id", handler.RestartContainer)
+	containers.Post("/create", handler.CreateContainer)
 	
 	servers := app.Group("/servers")
 	servers.Get("/", handler.ListServers)

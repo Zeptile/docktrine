@@ -3,14 +3,17 @@ package database
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"time"
+
+	"github.com/Zeptile/docktrine/internal/logger"
 )
 
 type APIKey struct {
-	ID          int64     `json:"id"`
-	Key         string    `json:"key"`
-	Description string    `json:"description"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID          int64      `json:"id"`
+	Key         string     `json:"key"`
+	Description string     `json:"description"`
+	CreatedAt   time.Time  `json:"created_at"`
 	LastUsedAt  *time.Time `json:"last_used_at"`
 }
 
@@ -28,8 +31,10 @@ func (db *DB) GetAPIKey(key string) (*APIKey, error) {
 		&apiKey.ID, &apiKey.Key, &apiKey.Description, &apiKey.CreatedAt, &apiKey.LastUsedAt)
 	
 	if err != nil {
+		logger.Debug(fmt.Sprintf("Error getting API key: %v", err))
 		return nil, err
 	}
+	
 	return &apiKey, nil
 }
 

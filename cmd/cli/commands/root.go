@@ -47,6 +47,6 @@ func Execute() error {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&apiURL, "api-url", "", "Docktrine API URL (overrides DOCKTRINE_API_URL env var)")
-	rootCmd.PersistentFlags().StringVar(&server, "server", "", "Docker server name to connect to")
 	rootCmd.PersistentFlags().StringVar(&apiKey, "api-key", "", "API Key for authentication (overrides DOCKTRINE_API_KEY env var)")
+	rootCmd.PersistentFlags().StringVar(&server, "server", "", "Docker server name to connect to")
 } 

@@ -3,6 +3,8 @@ package docker
 import (
 	"context"
 	"fmt"
+	"io"
+	"strings"
 	"time"
 
 	"github.com/Zeptile/docktrine/internal/database"
@@ -96,10 +98,47 @@ func (d *DockerClient) RestartContainer(containerID string, serverName string, p
 			return err
 		}
 
-		_, err = cli.ImagePull(context.Background(), inspect.Config.Image, image.PullOptions{})
+		if err := cli.ContainerStop(context.Background(), containerID, container.StopOptions{}); err != nil {
+			return err
+		}
+
+		if err := cli.ContainerRemove(context.Background(), containerID, container.RemoveOptions{
+			RemoveVolumes: false,
+			Force:        true,
+		}); err != nil {
+			return err
+		}
+
+		imageName := inspect.Config.Image
+		if len(imageName) > 0 && !containsImageTag(imageName) {
+			imageName = imageName + ":latest"
+		}
+
+		reader, err := cli.ImagePull(context.Background(), imageName, image.PullOptions{
+			All:           false,
+			RegistryAuth: "",
+		})
 		if err != nil {
 			return err
 		}
+
+		inspect.Config.Image = normalizeImageName(imageName)
+
+		defer reader.Close()
+		io.Copy(io.Discard, reader)
+
+		createResp, err := cli.ContainerCreate(context.Background(),
+			inspect.Config,
+			inspect.HostConfig,
+			nil,
+			nil,
+			inspect.Name,
+		)
+		if err != nil {
+			return err
+		}
+
+		return cli.ContainerStart(context.Background(), createResp.ID, container.StartOptions{})
 	}
 
 	return cli.ContainerRestart(context.Background(), containerID, container.StopOptions{})
@@ -107,7 +146,7 @@ func (d *DockerClient) RestartContainer(containerID string, serverName string, p
 
 func (d *DockerClient) StartContainer(containerID string, serverName string) error {
 	cli, err := d.newClient(serverName)
-	if err != nil {
+	if err != nil { 
 		return err
 	}
 	defer cli.Close()
@@ -145,4 +184,67 @@ func (d *DockerClient) GetContainer(containerID string, serverName string) (fibe
 		"created": inspect.Created,
 		"status":  inspect.State.Status,
 	}, nil
+}
+
+func (d *DockerClient) CreateContainer(serverName string, config *container.Config, hostConfig *container.HostConfig, name string) error {
+	cli, err := d.newClient(serverName)
+	if err != nil {
+		return err
+	}
+	defer cli.Close()
+
+	_, err = cli.ImagePull(context.Background(), config.Image, image.PullOptions{})
+	if err != nil {
+		return err
+	}
+
+	config.Image = normalizeImageName(config.Image)
+
+	resp, err := cli.ContainerCreate(
+		context.Background(),
+		config,
+		hostConfig,
+		nil,
+		nil,
+		name,
+	)
+	if err != nil {
+		return err
+	}
+
+	// Start container if requested
+	return cli.ContainerStart(context.Background(), resp.ID, container.StartOptions{})
+}
+
+func normalizeImageName(imageName string) string {
+	if imageName == "" || !strings.Contains(imageName, ":") {
+		return imageName
+	}
+
+	lastIndex := strings.LastIndex(imageName, ":")
+	portionBeforeColon := imageName[:lastIndex]
+	if !strings.Contains(portionBeforeColon, "/") {
+		return portionBeforeColon
+	}
+	
+	parts := strings.Split(imageName, "/")
+	lastPart := parts[len(parts)-1]
+	if strings.Contains(lastPart, ":") {
+		parts[len(parts)-1] = strings.Split(lastPart, ":")[0]
+		return strings.Join(parts, "/")
+	}
+
+	return imageName
+}
+
+func containsImageTag(imageName string) bool {
+	for i := len(imageName) - 1; i >= 0; i-- {
+		if imageName[i] == ':' {
+			return true
+		}
+		if imageName[i] == '/' {
+			return false
+		}
+	}
+	return false
 } 

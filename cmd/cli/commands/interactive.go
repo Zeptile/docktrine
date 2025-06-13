@@ -1,7 +1,10 @@
 package commands
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -162,6 +165,102 @@ func executor(input string) {
 			cmd := restartCmd
 			cmd.Flags().Set("pull-latest", fmt.Sprintf("%v", pullLatest))
 			cmd.Run(cmd, cmdArgs[1:])
+		case "create":
+			name := prompt.Input("Enter container name: ", func(d prompt.Document) []prompt.Suggest {
+				return []prompt.Suggest{}
+			})
+			name = strings.TrimSpace(name)
+
+			image := prompt.Input("Enter image name: ", func(d prompt.Document) []prompt.Suggest {
+				return []prompt.Suggest{
+					{Text: "nginx:latest", Description: "Nginx web server"},
+					{Text: "postgres:latest", Description: "PostgreSQL database"},
+					{Text: "redis:latest", Description: "Redis cache"},
+				}
+			})
+			image = strings.TrimSpace(image)
+
+			var ports []string = []string{}
+			for {
+				port := prompt.Input("Enter port binding (e.g., 80:80) or press enter to finish: ", func(d prompt.Document) []prompt.Suggest {
+					return []prompt.Suggest{
+						{Text: "80:80", Description: "HTTP"},
+						{Text: "443:443", Description: "HTTPS"},
+						{Text: "5432:5432", Description: "PostgreSQL"},
+					}
+				})
+				port = strings.TrimSpace(port)
+				if port == "" {
+					break
+				}
+				ports = append(ports, port)
+			}
+
+			var env []string = []string{}
+			for {
+				envVar := prompt.Input("Enter environment variable (e.g., KEY=value) or press enter to finish: ", func(d prompt.Document) []prompt.Suggest {
+					return []prompt.Suggest{}
+				})
+				envVar = strings.TrimSpace(envVar)
+				if envVar == "" {
+					break
+				}
+				env = append(env, envVar)
+			}
+
+			var volumes []string = []string{}
+			for {
+				volume := prompt.Input("Enter volume binding (e.g., /host/path:/container/path) or press enter to finish: ", func(d prompt.Document) []prompt.Suggest {
+					return []prompt.Suggest{}
+				})
+				volume = strings.TrimSpace(volume)
+				if volume == "" {
+					break
+				}
+				volumes = append(volumes, volume)
+			}
+
+			autoStartInput := prompt.Input("Start container after creation? (y/N): ", func(d prompt.Document) []prompt.Suggest {
+				return []prompt.Suggest{
+					{Text: "y", Description: "Yes"},
+					{Text: "n", Description: "No"},
+				}
+			})
+			autoStart := strings.ToLower(strings.TrimSpace(autoStartInput)) == "y"
+
+			requestBody := map[string]interface{}{
+				"name":       name,
+				"image":      image,
+				"ports":      ports,
+				"env":        env,
+				"volumes":    volumes,
+				"auto_start": autoStart,
+			}
+
+			jsonData, err := json.Marshal(requestBody)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				return
+			}
+
+			uri := fmt.Sprintf("%s/containers/create", apiURL)
+			if currentServer != "" {
+				uri += fmt.Sprintf("?server=%s", url.QueryEscape(currentServer))
+			}
+
+			resp, err := makeRequest("POST", uri, bytes.NewBuffer(jsonData))
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				return
+			}
+			defer resp.Body.Close()
+
+			if err := handleError(resp); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				return
+			}
+
+			fmt.Println("Container created successfully")
 		default:
 			fmt.Printf("Unknown command: %s\n", cmdArgs[0])
 		}
@@ -243,6 +342,7 @@ func completer(d prompt.Document) []prompt.Suggest {
 			{Text: "start", Description: "Start a container"},
 			{Text: "stop", Description: "Stop a container"},
 			{Text: "restart", Description: "Restart a container"},
+			{Text: "create", Description: "Create a new container"},
 		}
 	}
 
