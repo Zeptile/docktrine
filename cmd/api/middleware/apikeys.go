@@ -22,6 +22,7 @@ func APIKeyAuth(db *database.DB) fiber.Handler {
         }
 
         db.UpdateAPIKeyLastUsed(apiKey)
+        c.Locals("api_key_description", key.Description)
 
         return c.Next()
     }

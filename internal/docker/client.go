@@ -2,7 +2,6 @@ package docker
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -25,28 +24,31 @@ func NewDockerClient(db *database.DB) *DockerClient {
 }
 
 func (d *DockerClient) newClient(serverName string) (*client.Client, error) {
-	var server *database.Server
-	var err error
-
-	if serverName != "" {
-		server, err = d.db.GetServerByName(serverName)
-	} else {
-		server, err = d.db.GetDefaultServer()
-	}
-
+	server, err := d.db.ResolveServer(serverName)
 	if err != nil {
 		return nil, err
 	}
+	return Connect(server, client.WithTimeout(15*time.Second))
+}
 
-	if server == nil {
-		return nil, fmt.Errorf("server not found")
+// Connect opens a Docker API client for a server. Hosts may be unix://,
+// tcp:// or ssh://user@host[:port] (which needs docker on the remote side).
+func Connect(server *database.Server, opts ...client.Opt) (*client.Client, error) {
+	base := []client.Opt{client.WithAPIVersionNegotiation()}
+
+	if strings.HasPrefix(server.Host, "ssh://") {
+		dialer, err := sshDialer(server.Host)
+		if err != nil {
+			return nil, err
+		}
+		base = append(base,
+			client.WithHost("http://docker.ssh"),
+			client.WithDialContext(dialer))
+	} else {
+		base = append(base, client.WithHost(server.Host))
 	}
 
-	return client.NewClientWithOpts(
-		client.WithHost(server.Host),
-		client.WithAPIVersionNegotiation(),
-		client.WithTimeout(15*time.Second),
-	)
+	return client.NewClientWithOpts(append(base, opts...)...)
 }
 
 func (d *DockerClient) ListContainers(serverName string) ([]fiber.Map, error) {
