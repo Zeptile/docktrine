@@ -164,6 +164,10 @@ func (d *Deployer) InstallIngress(server *database.Server, opts IngressOptions) 
 			// TLS ends at the gateway; trust its X-Forwarded-* headers.
 			"--entrypoints.web.forwardedheaders.insecure=true",
 			"--ping=true",
+			// A container that just stopped leaves an unreachable IP behind
+			// until Traefik drops it; fail fast so the retry middleware moves
+			// the request to a live container instead of hanging.
+			"--serverstransport.forwardingtimeouts.dialtimeout=1s",
 		},
 		Labels:       map[string]string{LabelRole: "ingress"},
 		ExposedPorts: nat.PortSet{"80/tcp": struct{}{}},
