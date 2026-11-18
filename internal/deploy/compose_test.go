@@ -39,8 +39,11 @@ func TestComposeOverride(t *testing.T) {
 	}
 
 	web, db := doc.Services["web"], doc.Services["db"]
-	if web.Labels[LabelDeployment] != "7" || db.Labels[LabelApp] != "site" {
+	if web.Labels[LabelEnv] != "dev" || db.Labels[LabelApp] != "site" {
 		t.Errorf("missing docktrine labels: %s", data)
+	}
+	if _, ok := web.Labels[LabelDeployment]; ok {
+		t.Errorf("deployment label would force compose to recreate every service: %s", data)
 	}
 	rule := web.Labels["traefik.http.routers.site-dev.rule"]
 	if rule != "Host(`site.dev.example.com`) || Host(`www.site.dev.example.com`)" {

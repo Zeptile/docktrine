@@ -105,6 +105,10 @@ func (t target) composeOverride(services map[string]any, exposed string) ([]byte
 	out := map[string]any{}
 	for name := range services {
 		labels := t.labels()
+		// A label that changes every deployment would make compose recreate
+		// every service, even unchanged ones; compose stops before it starts,
+		// so that is downtime. The deployment is tracked in the database.
+		delete(labels, LabelDeployment)
 		service := map[string]any{}
 		if name == exposed {
 			for k, v := range t.routingLabels() {
