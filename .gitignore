@@ -44,3 +44,12 @@ cmd/cli/cli
 # Web UI
 web/node_modules/
 web/dist/
+
+# Release builds
+/dist/
+
+# Gateway deployment: secrets and keys stay local
+deploy/.env
+deploy/data/
+deploy/ssh/*
+!deploy/ssh/config.example

@@ -1,0 +1,33 @@
+# Docktrine control plane, meant to run on the gateway next to Nginx Proxy
+# Manager. See deploy/README.md.
+name: docktrine
+
+services:
+  docktrine:
+    image: ${DOCKTRINE_IMAGE:-docktrine:latest}
+    container_name: docktrine
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      # Loopback only: put the UI behind NPM (docktrine.zeptile.software)
+      # rather than exposing it directly
+      - "127.0.0.1:3000:3000"
+    volumes:
+      # Database, secrets master key and the first API key. Back it up.
+      - ./data:/app/data
+      # SSH key, known_hosts and config for reaching the nodes; copied into
+      # place with the right permissions at startup
+      - ./ssh:/ssh:ro
+    extra_hosts:
+      # Lets Docktrine reach services on the gateway host itself, such as
+      # SSH tunnel endpoints or NPM's admin API on port 81
+      - "host.docker.internal:host-gateway"
+    # If NPM runs in Docker, joining its network lets NPM proxy to
+    # http://docktrine:3000 and Docktrine call NPM by service name:
+    # networks:
+    #   - npm
+
+# networks:
+#   npm:
+#     external: true
+#     name: <your NPM network, see `docker network ls`>

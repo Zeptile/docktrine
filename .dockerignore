@@ -6,3 +6,6 @@ web/dist/
 .git/
 .vscode/
 mock-docker-image/
+.playwright-mcp/
+web/.playwright-mcp/
+dist/

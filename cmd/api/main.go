@@ -46,8 +46,17 @@ func main() {
 
 	app := fiber.New()
 	
+	// Unauthenticated liveness check for container health checks, ahead of
+	// the request logger so it doesn't log every probe
+	app.Get("/healthz", func(c *fiber.Ctx) error {
+		if err := db.Ping(); err != nil {
+			return c.Status(503).SendString("database unavailable")
+		}
+		return c.SendString("ok")
+	})
+
 	app.Use(middleware.RequestLogger())
-	
+
 	// Serve static files from the web/dist directory for the UI
 	app.Static("/", "./web/dist")
 	

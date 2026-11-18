@@ -19,8 +19,9 @@ A Docker container management tool with REST API, CLI interfaces, and a modern w
 
 ## Installation
 
-Install using Go (WIP, not functional yet):
-`go install github.com/Zeptile/docktrine/cmd/...@latest`
+To run Docktrine on a server, see [deploy/README.md](deploy/README.md).
+
+`./build.sh cli` builds the CLI for macOS and Linux into `dist/`.
 
 ## Usage
 
