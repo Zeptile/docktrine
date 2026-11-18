@@ -3,16 +3,18 @@
   import EnvironmentDetail from "./lib/components/EnvironmentDetail.svelte";
   import ContainerList from "./lib/components/ContainerList.svelte";
   import ServerList from "./lib/components/ServerList.svelte";
+  import ApiKeys from "./lib/components/ApiKeys.svelte";
   import Login from "./lib/components/Login.svelte";
   import { auth } from "./lib/api";
   import { onMount } from "svelte";
 
-  // Routes: #/apps, #/apps/<app>/<env>, #/containers, #/servers
+  // Routes: #/apps, #/apps/<app>/<env>, #/containers, #/servers, #/keys
   type Route =
     | { page: "apps" }
     | { page: "environment"; app: string; env: string }
     | { page: "containers" }
-    | { page: "servers" };
+    | { page: "servers" }
+    | { page: "keys" };
 
   let route: Route = parse(location.hash);
   let authenticated = !!auth.getKey();
@@ -21,6 +23,7 @@
     { id: "apps", label: "Apps" },
     { id: "containers", label: "Containers" },
     { id: "servers", label: "Servers" },
+    { id: "keys", label: "API keys" },
   ];
 
   $: activeTab = route.page === "environment" ? "apps" : route.page;
@@ -30,7 +33,7 @@
     if (parts[0] === "apps" && parts.length >= 3) {
       return { page: "environment", app: parts[1], env: parts[2] };
     }
-    if (parts[0] === "containers" || parts[0] === "servers") {
+    if (parts[0] === "containers" || parts[0] === "servers" || parts[0] === "keys") {
       return { page: parts[0] };
     }
     return { page: "apps" };
@@ -101,6 +104,8 @@
       <ContainerList />
     {:else if route.page === "servers"}
       <ServerList />
+    {:else if route.page === "keys"}
+      <ApiKeys />
     {/if}
   </div>
   {/if}

@@ -93,13 +93,7 @@ func (db *DB) createTables() error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
-		`CREATE TABLE IF NOT EXISTS api_keys (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			key TEXT UNIQUE NOT NULL,
-			description TEXT,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			last_used_at DATETIME
-		)`,
+		apiKeysTable,
 		`CREATE TABLE IF NOT EXISTS apps (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT UNIQUE NOT NULL,
@@ -180,5 +174,5 @@ func (db *DB) migrate() error {
 		}
 	}
 
-	return nil
+	return db.migrateAPIKeys()
 } 

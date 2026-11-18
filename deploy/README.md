@@ -81,6 +81,9 @@ docker compose ps        # should become "healthy"
 cat data/initial-api-key # the first API key; delete the file once saved
 ```
 
+The first key is named "Default API key". Rename it after whoever holds it,
+then create one key per person and system (see [API keys](#api-keys)).
+
 Building on the gateway itself also works (`./build.sh image` there, then
 `docker compose up -d`).
 
@@ -118,6 +121,28 @@ docktrine servers ingress prd1-tor --port 8080
 
 The Servers page in the UI does the same.
 
+## API keys
+
+Every key has full access. Give each person and system its own, so deploy
+history shows who deployed and a lost laptop costs one key, not all of them:
+
+```sh
+docktrine keys rename "Default API key" zeptile
+docktrine keys create alex-laptop   # prints the key once; send it securely
+docktrine keys create ci
+docktrine keys list
+docktrine keys revoke alex-laptop
+```
+
+The API keys page in the UI does the same. Keys are stored hashed, so a copy
+of the database doesn't contain usable keys. The last key can't be revoked.
+
+If every key is lost, create one from a shell on the gateway:
+
+```sh
+docker compose exec docktrine /app/docktrine-api create-key zeptile
+```
+
 ## Upgrades and backups
 
 ```sh
@@ -129,7 +154,5 @@ makes every stored secret unreadable.
 
 ## Current limitations
 
-- There is one API key, created on first start, and no way yet to create
-  more. Everyone shares it, so deploy history can't tell people apart.
 - A compose service that changes is stopped before its replacement starts,
   so it is briefly down. Single-image apps swap with no downtime.

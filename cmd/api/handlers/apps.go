@@ -15,7 +15,7 @@ import (
 )
 
 func createdBy(c *fiber.Ctx) string {
-	if desc, ok := c.Locals("api_key_description").(string); ok && desc != "" {
+	if desc, ok := c.Locals("api_key_name").(string); ok && desc != "" {
 		return desc
 	}
 	return "api"

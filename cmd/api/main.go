@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -31,6 +32,24 @@ func main() {
 		logger.Fatal(err, "Failed to initialize database")
 	}
 	defer db.Close()
+
+	// Recovery for anyone with a shell on the server, e.g. when every key
+	// is lost: docker compose exec docktrine /app/docktrine-api create-key <name>
+	// Runs before anything that assumes it is the only server process.
+	if len(os.Args) > 1 && os.Args[1] == "create-key" {
+		if len(os.Args) != 3 {
+			fmt.Fprintln(os.Stderr, "usage: docktrine-api create-key <name>")
+			os.Exit(2)
+		}
+		key, err := db.CreateAPIKey(os.Args[2])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "Created API key %q. Store it now, it won't be shown again:\n", key.Name)
+		fmt.Println(key.Key)
+		return
+	}
 
 	if err := db.FailStaleDeployments(); err != nil {
 		logger.Fatal(err, "Failed to clean up interrupted deployments")
@@ -91,6 +110,12 @@ func main() {
 	servers.Post("/:name/prune", handler.PruneServer)
 	
 	api.Get("/config", handler.GetConfig)
+
+	keys := api.Group("/keys")
+	keys.Get("/", handler.ListAPIKeys)
+	keys.Post("/", handler.CreateAPIKey)
+	keys.Patch("/:id", handler.RenameAPIKey)
+	keys.Delete("/:id", handler.RevokeAPIKey)
 	
 	deployments := api.Group("/deployments")
 	deployments.Get("/", handler.ListDeployments)

@@ -159,6 +159,16 @@ export interface SecretInfo {
   updated_at: string;
 }
 
+export interface ApiKeyInfo {
+  id: number;
+  name: string;
+  prefix: string;
+  created_at: string;
+  last_used_at?: string | null;
+  // The key this browser is signed in with
+  current: boolean;
+}
+
 export interface CreateContainerRequest {
   image: string;
   name?: string;
@@ -386,6 +396,20 @@ export const api = {
         onChunk(decoder.decode(value, { stream: true }));
       }
     },
+  },
+
+  keys: {
+    list: (): Promise<ApiKeyInfo[]> => request("/keys"),
+
+    // The response is the only time the full key is available
+    create: (name: string): Promise<ApiKeyInfo & { key: string }> =>
+      request("/keys", { method: "POST", body: JSON.stringify({ name }) }),
+
+    rename: (id: number, name: string): Promise<{ message: string }> =>
+      request(`/keys/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
+
+    revoke: (id: number): Promise<{ message: string }> =>
+      request(`/keys/${id}`, { method: "DELETE" }),
   },
 
   deployments: {
