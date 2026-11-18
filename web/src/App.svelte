@@ -1,27 +1,55 @@
 <script lang="ts">
+  import AppList from "./lib/components/AppList.svelte";
+  import EnvironmentDetail from "./lib/components/EnvironmentDetail.svelte";
   import ContainerList from "./lib/components/ContainerList.svelte";
   import ServerList from "./lib/components/ServerList.svelte";
   import Login from "./lib/components/Login.svelte";
   import { auth } from "./lib/api";
   import { onMount } from "svelte";
 
-  let activeTab = "containers";
+  // Routes: #/apps, #/apps/<app>/<env>, #/containers, #/servers
+  type Route =
+    | { page: "apps" }
+    | { page: "environment"; app: string; env: string }
+    | { page: "containers" }
+    | { page: "servers" };
+
+  let route: Route = parse(location.hash);
   let authenticated = !!auth.getKey();
+
+  const tabs = [
+    { id: "apps", label: "Apps" },
+    { id: "containers", label: "Containers" },
+    { id: "servers", label: "Servers" },
+  ];
+
+  $: activeTab = route.page === "environment" ? "apps" : route.page;
+
+  function parse(hash: string): Route {
+    const parts = hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
+    if (parts[0] === "apps" && parts.length >= 3) {
+      return { page: "environment", app: parts[1], env: parts[2] };
+    }
+    if (parts[0] === "containers" || parts[0] === "servers") {
+      return { page: parts[0] };
+    }
+    return { page: "apps" };
+  }
 
   onMount(() => {
     const onUnauthorized = () => (authenticated = false);
+    const onHashChange = () => (route = parse(location.hash));
     window.addEventListener("docktrine:unauthorized", onUnauthorized);
-    return () =>
+    window.addEventListener("hashchange", onHashChange);
+    return () => {
       window.removeEventListener("docktrine:unauthorized", onUnauthorized);
+      window.removeEventListener("hashchange", onHashChange);
+    };
   });
 
   function logout() {
     auth.clearKey();
     authenticated = false;
-  }
-
-  function setActiveTab(tab: string) {
-    activeTab = tab;
   }
 </script>
 
@@ -33,7 +61,7 @@
     <div class="container mx-auto px-4 py-4 flex items-center justify-between">
       <div>
         <h1 class="text-2xl font-bold text-foreground">Docktrine</h1>
-        <p class="text-muted-foreground">Docker Container Management</p>
+        <p class="text-muted-foreground">Apps and nodes</p>
       </div>
       <button
         class="text-sm text-muted-foreground hover:text-foreground"
@@ -47,32 +75,31 @@
   <nav class="border-b">
     <div class="container mx-auto px-4">
       <div class="flex space-x-1">
-        <button
-          class="px-4 py-2 text-sm font-medium rounded-t-lg transition-colors {activeTab ===
-          'containers'
-            ? 'bg-primary text-primary-foreground'
-            : 'text-muted-foreground hover:text-foreground'}"
-          on:click={() => setActiveTab("containers")}
-        >
-          Containers
-        </button>
-        <button
-          class="px-4 py-2 text-sm font-medium rounded-t-lg transition-colors {activeTab ===
-          'servers'
-            ? 'bg-primary text-primary-foreground'
-            : 'text-muted-foreground hover:text-foreground'}"
-          on:click={() => setActiveTab("servers")}
-        >
-          Servers
-        </button>
+        {#each tabs as tab}
+          <a
+            href="#/{tab.id}"
+            class="px-4 py-2 text-sm font-medium rounded-t-lg transition-colors {activeTab ===
+            tab.id
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:text-foreground'}"
+          >
+            {tab.label}
+          </a>
+        {/each}
       </div>
     </div>
   </nav>
 
   <div class="container mx-auto px-4 py-6">
-    {#if activeTab === "containers"}
+    {#if route.page === "apps"}
+      <AppList />
+    {:else if route.page === "environment"}
+      {#key `${route.app}/${route.env}`}
+        <EnvironmentDetail app={route.app} env={route.env} />
+      {/key}
+    {:else if route.page === "containers"}
       <ContainerList />
-    {:else if activeTab === "servers"}
+    {:else if route.page === "servers"}
       <ServerList />
     {/if}
   </div>
