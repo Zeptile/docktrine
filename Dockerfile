@@ -1,3 +1,15 @@
+FROM --platform=linux/amd64 node:22-alpine AS web-builder
+
+WORKDIR /web
+
+COPY web/package.json web/package-lock.json ./
+
+RUN npm ci
+
+COPY web/ ./
+
+RUN npm run build
+
 FROM --platform=linux/amd64 golang:1.23-alpine AS builder
 
 RUN apk add --no-cache gcc musl-dev sqlite-dev
@@ -23,6 +35,7 @@ WORKDIR /app
 
 COPY --from=builder /docktrine-api /app/docktrine-api
 COPY --from=builder /app/docs /app/docs
+COPY --from=web-builder /web/dist /app/web/dist
 RUN chmod +x /app/docktrine-api
 
 RUN mkdir -p /app/data

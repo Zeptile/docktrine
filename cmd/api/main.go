@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 
 	"github.com/Zeptile/docktrine/cmd/api/handlers"
@@ -30,23 +31,22 @@ func main() {
 	
 	app.Use(middleware.RequestLogger())
 	
-	app.Use(func(c *fiber.Ctx) error {
-		if strings.HasPrefix(c.Path(), "/swagger") {
+	// Serve static files from the web/dist directory for the UI
+	app.Static("/", "./web/dist")
+	
+	api := app.Group("/api", func(c *fiber.Ctx) error {
+		if strings.HasPrefix(c.Path(), "/api/swagger") {
 			return c.Next()
 		}
 		return middleware.APIKeyAuth(db)(c)
 	})
 	
-	app.Get("/", func(c *fiber.Ctx) error {
-		return c.Redirect("/swagger/")
-	})
-	
 	handler := handlers.NewHandler(db)
 	
 	logger.Info("Setting up routes...")
-	app.Get("/swagger/*", swagger.HandlerDefault)
+	api.Get("/swagger/*", swagger.HandlerDefault)
 	
-	containers := app.Group("/containers")
+	containers := api.Group("/containers")
 	containers.Get("/", handler.ListContainers)
 	containers.Post("/start/:id", handler.StartContainer)
 	containers.Post("/stop/:id", handler.StopContainer)
@@ -54,14 +54,32 @@ func main() {
 	containers.Post("/restart/:id", handler.RestartContainer)
 	containers.Post("/create", handler.CreateContainer)
 	
-	servers := app.Group("/servers")
+	servers := api.Group("/servers")
 	servers.Get("/", handler.ListServers)
 	servers.Get("/:name", handler.GetServer)
 	servers.Post("/", handler.CreateServer)
 	servers.Delete("/:name", handler.DeleteServer)
 	
-	logger.Info("Starting server on :3000")
-	if err := app.Listen(":3000"); err != nil {
+	api.All("/*", func(c *fiber.Ctx) error {
+		return c.Status(404).JSON(fiber.Map{
+			"error": "Not found",
+		})
+	})
+	
+	// Catch-all route for SPA (must be last)
+	app.Get("/*", func(c *fiber.Ctx) error {
+		return c.SendFile("./web/dist/index.html")
+	})
+	
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "3000"
+	}
+	
+	logger.Info("Starting server on :" + port)
+	logger.Info("UI available at: http://localhost:" + port)
+	logger.Info("API documentation at: http://localhost:" + port + "/api/swagger/")
+	if err := app.Listen(":" + port); err != nil {
 		logger.Fatal(err, "Server failed to start")
 	}
 } 

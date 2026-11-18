@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -35,6 +36,8 @@ var (
 			if apiKey == "" {
 				return fmt.Errorf("DOCKTRINE_API_KEY environment variable or --api-key flag must be set")
 			}
+			
+			apiURL = strings.TrimRight(apiURL, "/") + "/api"
 			
 			return nil
 		},

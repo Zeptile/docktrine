@@ -28,7 +28,7 @@ var (
 )
 
 func fetchServers() error {
-	resp, err := http.Get(fmt.Sprintf("%s/servers", apiURL))
+	resp, err := makeRequest("GET", fmt.Sprintf("%s/servers", apiURL), nil)
 	if err != nil {
 		return err
 	}

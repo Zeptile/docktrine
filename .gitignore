@@ -40,3 +40,7 @@ __debug_bin
 # Binary output directories
 cmd/api/api
 cmd/cli/cli
+
+# Web UI
+web/node_modules/
+web/dist/
