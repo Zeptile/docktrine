@@ -3,7 +3,7 @@
   import { api, ApiError } from "$lib/api";
   import Button from "./ui/Button.svelte";
   import Card from "./ui/Card.svelte";
-  import { Pause, Play } from "lucide-svelte";
+  import { Pause, Play, ArrowDownToLine } from "lucide-svelte";
 
   export let app: string;
   export let env: string;
@@ -18,6 +18,8 @@
   let error: string | null = null;
   let box: HTMLPreElement;
   let controller: AbortController | null = null;
+  // False once the reader scrolls up, so new lines don't yank them back down
+  let pinned = true;
 
   onMount(() => {
     start();
@@ -31,11 +33,12 @@
     text = "";
     error = null;
     streaming = true;
+    pinned = true;
     try {
       await api.apps.logs(app, env, { tail, follow, signal: ctrl.signal }, append);
     } catch (e) {
       if (!ctrl.signal.aborted) {
-        error = e instanceof ApiError ? e.message : "Log stream ended unexpectedly";
+        error = e instanceof ApiError ? e.message : "The log stream ended unexpectedly";
       }
     } finally {
       if (controller === ctrl) streaming = false;
@@ -48,61 +51,75 @@
   }
 
   async function append(chunk: string) {
-    const atBottom =
-      !box || box.scrollHeight - box.scrollTop - box.clientHeight < 40;
     text += chunk;
     if (text.length > MAX_CHARS) {
       text = text.slice(text.length - MAX_CHARS);
       text = text.slice(text.indexOf("\n") + 1);
     }
-    if (atBottom) {
+    if (pinned) {
       await tick();
       box.scrollTop = box.scrollHeight;
     }
   }
+
+  function onScroll() {
+    pinned = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  }
+
+  function jumpToEnd() {
+    box.scrollTop = box.scrollHeight;
+    pinned = true;
+  }
 </script>
 
-<Card class="flex flex-col">
-  <div class="px-4 py-3 border-b flex items-center justify-between gap-4">
-    <div class="flex items-center gap-4 text-sm">
+<Card class="overflow-hidden flex flex-col">
+  <div class="px-4 py-2.5 border-b flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
       <label class="flex items-center gap-2">
         Last
-        <select
-          bind:value={tail}
-          onchange={start}
-          class="px-2 py-1 border rounded-md bg-background"
-        >
+        <select bind:value={tail} onchange={start} class="input h-8 w-auto py-0">
           <option value={100}>100</option>
           <option value={200}>200</option>
-          <option value={1000}>1000</option>
-          <option value={5000}>5000</option>
+          <option value={1000}>1,000</option>
+          <option value={5000}>5,000</option>
         </select>
         lines
       </label>
       <label class="flex items-center gap-2">
-        <input type="checkbox" bind:checked={follow} onchange={start} class="w-4 h-4" />
-        Follow
+        <input type="checkbox" bind:checked={follow} onchange={start} class="w-4 h-4 accent-[rgb(var(--signal))]" />
+        Follow new output
       </label>
       {#if streaming && follow}
-        <span class="inline-flex items-center gap-1.5 text-green-700">
+        <span class="inline-flex items-center gap-1.5 text-success font-medium">
           <span class="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span> Live
         </span>
       {/if}
     </div>
     {#if streaming}
       <Button size="sm" variant="outline" onclick={stop}>
-        <Pause class="w-4 h-4 mr-2" /> Stop
+        <Pause /> Pause
       </Button>
     {:else}
       <Button size="sm" variant="outline" onclick={start}>
-        <Play class="w-4 h-4 mr-2" /> {follow ? "Resume" : "Reload"}
+        <Play /> {follow ? "Resume" : "Reload"}
       </Button>
     {/if}
   </div>
   {#if error}
-    <div class="px-4 py-2 text-sm text-destructive border-b">{error}</div>
+    <div class="px-4 py-2.5 text-sm text-destructive bg-destructive/10 border-b">{error}</div>
   {/if}
-  <pre
-    bind:this={box}
-    class="p-4 text-xs font-mono bg-muted/50 overflow-auto h-[32rem] whitespace-pre-wrap break-all">{text || (streaming ? "Waiting for output..." : "No output.")}</pre>
+  <div class="relative">
+    <pre
+      bind:this={box}
+      onscroll={onScroll}
+      class="terminal p-5 overflow-auto h-[34rem] whitespace-pre-wrap break-all">{text || (streaming ? "Waiting for output…" : "No output.")}</pre>
+    {#if !pinned}
+      <button
+        class="absolute bottom-4 right-6 h-8 px-3 rounded-md bg-signal text-signal-ink text-xs font-semibold shadow-lg inline-flex items-center gap-1.5"
+        onclick={jumpToEnd}
+      >
+        <ArrowDownToLine class="w-3.5 h-3.5" /> Jump to latest
+      </button>
+    {/if}
+  </div>
 </Card>

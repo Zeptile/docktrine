@@ -2,58 +2,134 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Colors are RGB channels so Tailwind can apply opacity (bg-success/10).
+   The yard bar is the top bar: navy in both themes. */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222.2 84% 4.9%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222.2 84% 4.9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
-    --radius: 0.5rem;
+    --background: 230 234 236;
+    --card: 248 250 251;
+    --muted: 236 240 242;
+    --foreground: 20 36 51;
+    --muted-foreground: 86 103 117;
+    --border: 203 212 218;
+    --input: 186 197 205;
+    --ring: 37 99 168;
+    --signal: 245 183 0;
+    --signal-ink: 20 36 51;
+    --link: 30 86 150;
+    --success: 26 117 72;
+    --info: 37 99 168;
+    --warning: 166 98 0;
+    --danger: 180 35 24;
+    --danger-ink: 255 255 255;
+    --yard: 20 36 51;
+    --yard-foreground: 233 239 243;
+    --yard-muted: 143 163 179;
+    --terminal: 14 25 36;
+    --terminal-foreground: 207 220 230;
+    color-scheme: light;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 84% 4.9%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 94.1%;
+    --background: 13 25 37;
+    --card: 20 34 47;
+    --muted: 27 44 59;
+    --foreground: 227 234 239;
+    --muted-foreground: 143 161 175;
+    --border: 38 57 75;
+    --input: 54 76 96;
+    --ring: 106 168 232;
+    --signal: 245 183 0;
+    --signal-ink: 20 36 51;
+    --link: 120 178 238;
+    --success: 72 199 142;
+    --info: 106 168 232;
+    --warning: 240 180 70;
+    --danger: 240 112 95;
+    --danger-ink: 20 24 30;
+    --yard: 9 18 27;
+    --yard-foreground: 227 234 239;
+    --yard-muted: 120 140 156;
+    --terminal: 8 15 22;
+    --terminal-foreground: 207 220 230;
+    color-scheme: dark;
   }
-}
 
-@layer base {
   * {
     @apply border-border;
   }
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
+    font-variation-settings: "wdth" 100;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+  code {
+    @apply font-mono text-[0.85em] px-1 py-px rounded-sm bg-muted;
+  }
+}
+
+@layer components {
+  .input {
+    @apply w-full h-10 px-3 rounded-md border border-input bg-card text-foreground text-sm
+      placeholder:text-muted-foreground/70 transition-colors
+      focus-visible:ring-offset-0 focus-visible:border-ring disabled:opacity-60;
+  }
+  select.input {
+    @apply pr-8;
+  }
+  .label {
+    @apply block text-sm font-medium mb-1.5;
+  }
+  .hint {
+    @apply text-xs text-muted-foreground mt-1.5;
+  }
+  /* Page and section titles: the stenciled lettering of container doors */
+  .stencil {
+    @apply font-stencil font-extrabold tracking-wide leading-none;
+  }
+  /* Corrugated steel strip, colored by currentColor */
+  .corrugated {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      currentColor 0 3px,
+      color-mix(in srgb, currentColor 55%, transparent) 3px 6px
+    );
+  }
+  /* Ribs running up and down, for blocks wider than tall */
+  .corrugated-x {
+    background-image: repeating-linear-gradient(
+      to right,
+      currentColor 0 4px,
+      color-mix(in srgb, currentColor 60%, transparent) 4px 8px
+    );
+  }
+  .corrugated-moving {
+    animation: corrugate 0.9s linear infinite;
+  }
+  .terminal {
+    background: rgb(var(--terminal));
+    color: rgb(var(--terminal-foreground));
+    @apply font-mono text-xs leading-relaxed;
+  }
+}
+
+@keyframes corrugate {
+  to {
+    background-position: 0 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

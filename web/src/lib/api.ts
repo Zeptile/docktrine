@@ -30,28 +30,27 @@ export const auth = {
 let memoryKey: string | null = auth.getKey();
 
 export interface Container {
-  Id: string;
-  Names: string[];
-  Image: string;
-  Command: string;
-  Created: number;
-  Status: string;
-  State: string;
-  Ports: Array<{
+  id: string;
+  // Docker's name, with a leading slash
+  name: string;
+  image: string;
+  created: string;
+  status: string;
+  state: {
+    Status: string;
+    Running: boolean;
+    StartedAt: string;
+    FinishedAt: string;
+    ExitCode: number;
+    Health?: { Status: string };
+  };
+  ports: Array<{
     PrivatePort: number;
     PublicPort?: number;
     Type: string;
     IP?: string;
-  }>;
-  Labels: Record<string, string>;
-  SizeRw?: number;
-  SizeRootFs?: number;
-  HostConfig: {
-    NetworkMode: string;
-  };
-  NetworkSettings: {
-    Networks: Record<string, any>;
-  };
+  }> | null;
+  labels: Record<string, string> | null;
 }
 
 export interface Server {

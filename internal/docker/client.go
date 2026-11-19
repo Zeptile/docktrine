@@ -72,10 +72,12 @@ func (d *DockerClient) ListContainers(serverName string) ([]fiber.Map, error) {
 			continue
 		}
 
+		// image is the reference it was started from, e.g. postgres:16;
+		// inspect only has the digest
 		containerDetails = append(containerDetails, fiber.Map{
 			"id":      inspect.ID,
 			"name":    inspect.Name,
-			"image":   inspect.Image,
+			"image":   c.Image,
 			"state":   inspect.State,
 			"created": inspect.Created,
 			"status":  inspect.State.Status,

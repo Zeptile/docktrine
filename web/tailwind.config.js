@@ -1,54 +1,38 @@
 /** @type {import('tailwindcss').Config} */
+const token = (name) => `rgb(var(--${name}) / <alpha-value>)`;
+
 export default {
-  content: ["./src/**/*.{html,js,svelte,ts}"],
+  content: ["./index.html", "./src/**/*.{html,js,svelte,ts}"],
+  darkMode: "class",
   theme: {
-    container: {
-      center: true,
-      padding: "2rem",
-      screens: {
-        "2xl": "1400px",
-      },
-    },
     extend: {
       colors: {
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
-        primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
-        },
-        secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
-        },
-        destructive: {
-          DEFAULT: "hsl(var(--destructive))",
-          foreground: "hsl(var(--destructive-foreground))",
-        },
-        muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
-        },
-        accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
-        },
-        popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
-        },
-        card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
-        },
+        border: token("border"),
+        input: token("input"),
+        ring: token("ring"),
+        background: token("background"),
+        foreground: token("foreground"),
+        card: { DEFAULT: token("card"), foreground: token("foreground") },
+        muted: { DEFAULT: token("muted"), foreground: token("muted-foreground") },
+        accent: { DEFAULT: token("muted"), foreground: token("foreground") },
+        primary: { DEFAULT: token("signal"), foreground: token("signal-ink") },
+        signal: { DEFAULT: token("signal"), ink: token("signal-ink") },
+        link: token("link"),
+        success: token("success"),
+        info: token("info"),
+        warning: token("warning"),
+        destructive: { DEFAULT: token("danger"), foreground: token("danger-ink") },
+        yard: { DEFAULT: token("yard"), foreground: token("yard-foreground"), muted: token("yard-muted") },
+      },
+      fontFamily: {
+        sans: ["Archivo Variable", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["JetBrains Mono Variable", "ui-monospace", "SFMono-Regular", "monospace"],
+        stencil: ["Big Shoulders Stencil Display", "Archivo Variable", "sans-serif"],
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        lg: "8px",
+        md: "6px",
+        sm: "3px",
       },
     },
   },
