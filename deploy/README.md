@@ -109,7 +109,7 @@ export DOCKTRINE_API_KEY=<key>
 docktrine servers add --name prd1-tor --host ssh://deploy@prd1-tor \
   --ingress-host <host> --ingress-port <port>
 docktrine servers health prd1-tor
-docktrine servers ingress prd1-tor --port 8080
+docktrine servers ingress prd1-tor --port 8880
 ```
 
 - `--host` uses the name from `ssh/config` (or the real hostname).

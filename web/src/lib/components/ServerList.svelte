@@ -98,7 +98,7 @@
     if (which === "edit") edits[name] = { ...server };
     if (which === "ingress") {
       ingress[name] ??= {
-        port: server.ingress_port || 8080,
+        port: server.ingress_port || 8880,
         // Nodes reached through an SSH tunnel only need the ingress on loopback
         bind: server.ingress_host === "127.0.0.1" || server.ingress_host === "localhost" ? "127.0.0.1" : "",
       };
