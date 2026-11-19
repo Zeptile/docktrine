@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -108,7 +109,17 @@ func (d *Deployer) deployImage(ctx context.Context, t target, log *deployLog) er
 		return err
 	}
 
-	return removePrevious(ctx, cli, t, log)
+	// Only stop the old containers once the new one gets traffic; if it
+	// never does, the old ones keep serving.
+	routed := true
+	if err := waitRouted(ctx, cli, t, []string{created.ID}, log); errors.Is(err, errNoIngressAPI) {
+		routed = false
+	} else if err != nil {
+		removeContainer(cli, created.ID)
+		return err
+	}
+
+	return removePrevious(ctx, cli, t, log, routed)
 }
 
 func pullImage(ctx context.Context, cli *client.Client, ref, auth string) error {
@@ -273,8 +284,9 @@ func removeContainer(cli *client.Client, id string) {
 }
 
 // removePrevious stops and removes containers of this environment that
-// belong to older deployments.
-func removePrevious(ctx context.Context, cli *client.Client, t target, log *deployLog) error {
+// belong to older deployments. routed says the ingress is confirmed to send
+// traffic to the new container; otherwise it waits for that to happen.
+func removePrevious(ctx context.Context, cli *client.Client, t target, log *deployLog, routed bool) error {
 	containers, err := listWorkload(ctx, cli, t.spec.App, t.spec.Environment)
 	if err != nil {
 		return err
@@ -291,10 +303,10 @@ func removePrevious(ctx context.Context, cli *client.Client, t target, log *depl
 		return nil
 	}
 
-	// Let the ingress start routing to the new container before the old ones
-	// stop. Requests still sent to a stopping container are retried on the
-	// new one by the router's retry middleware.
-	if len(t.spec.Hostnames) > 0 {
+	// Requests still sent to a stopping container are retried on the new one
+	// by the router's retry middleware. Without confirmation from the
+	// ingress, give it time to start routing to the new container first.
+	if len(t.spec.Hostnames) > 0 && !routed {
 		time.Sleep(drainPeriod)
 	}
 

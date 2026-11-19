@@ -149,6 +149,17 @@ docker compose exec docktrine /app/docktrine-api create-key zeptile
 docker compose pull && docker compose up -d
 ```
 
+Some releases change the node ingress. Reinstalling it on each node takes a
+second, and running apps keep running (their hostnames are briefly
+unreachable):
+
+```sh
+docktrine servers ingress <node> --port <port> [--bind 127.0.0.1]
+```
+
+A node whose ingress predates route checks still deploys, falling back to a
+fixed wait; deploy logs say when a reinstall would help.
+
 Back up `data/` (and `.env`). Losing `secret.key` or `DOCKTRINE_SECRET_KEY`
 makes every stored secret unreadable.
 

@@ -3,6 +3,7 @@ package deploy
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"gopkg.in/yaml.v3"
 )
 
@@ -84,6 +87,45 @@ func (d *Deployer) deployCompose(ctx context.Context, t target, log *deployLog) 
 	up := append(base, "up", "--detach", "--remove-orphans", "--wait", "--wait-timeout", "120")
 	if err := runLogged(ctx, log, environ, up...); err != nil {
 		return fmt.Errorf("docker compose up: %w", err)
+	}
+
+	if exposed == "" || len(t.spec.Hostnames) == 0 {
+		return nil
+	}
+	return waitComposeRouted(ctx, t, exposed, log)
+}
+
+// waitComposeRouted waits until the ingress routes to the exposed service's
+// containers, so a successful deploy means its hostnames answer.
+func waitComposeRouted(ctx context.Context, t target, service string, log *deployLog) error {
+	cli, err := connect(t.server)
+	if err != nil {
+		return err
+	}
+	defer cli.Close()
+
+	containers, err := cli.ContainerList(ctx, container.ListOptions{
+		Filters: filters.NewArgs(
+			filters.Arg("label", "com.docker.compose.project="+t.project()),
+			filters.Arg("label", "com.docker.compose.service="+service),
+		),
+	})
+	if err != nil {
+		return err
+	}
+	ids := []string{}
+	for _, c := range containers {
+		ids = append(ids, c.ID)
+	}
+
+	err = waitRouted(ctx, cli, t, ids, log)
+	if errors.Is(err, errNoIngressAPI) {
+		return nil
+	}
+	if err != nil {
+		// Compose has already replaced the containers; there is nothing
+		// older to fall back to
+		return fmt.Errorf("%w; the new containers are running but not reachable through the hostnames", err)
 	}
 	return nil
 }

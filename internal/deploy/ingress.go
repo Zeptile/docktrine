@@ -168,6 +168,13 @@ func (d *Deployer) InstallIngress(server *database.Server, opts IngressOptions) 
 			// until Traefik drops it; fail fast so the retry middleware moves
 			// the request to a live container instead of hanging.
 			"--serverstransport.forwardingtimeouts.dialtimeout=1s",
+			// Read-only API on the container's loopback, out of reach of app
+			// containers; deploys query it to confirm a new container is
+			// routed before reporting success or stopping the old one.
+			"--api=true",
+			"--api.insecure=true",
+			"--api.dashboard=false",
+			"--entrypoints.traefik.address=" + ingressAPIAddress,
 		},
 		Labels:       map[string]string{LabelRole: "ingress"},
 		ExposedPorts: nat.PortSet{"80/tcp": struct{}{}},

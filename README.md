@@ -46,9 +46,11 @@ redeploy, roll back, manage secrets and nodes.
   certificate), and removes it when the environment is destroyed. DNS must
   already point the hostnames at the gateway; a wildcard record such as
   `*.dev.zeptile.software` covers every app.
-- **Zero-downtime deploys.** A new container starts next to the old one and
-  takes traffic only once it passes its health check. If it fails, it's
-  removed and the old one keeps serving.
+- **Zero-downtime deploys.** A new container starts next to the old one.
+  The old one is stopped only once the new one passes its health check and
+  the ingress confirms it's routing traffic to it. If either doesn't happen,
+  the new container is removed and the old one keeps serving. When a deploy
+  reports success, its hostnames answer.
 
 Containers Docktrine creates carry `docktrine.app` and `docktrine.env`
 labels, so they're easy to tell apart from anything started by hand.
@@ -158,7 +160,8 @@ environments:
 Docktrine runs `docker compose up` on the node with the compose file plus
 an override that adds its labels and routing. `env` and `secrets` are
 available to the compose file as `${VAR}` and are also set on the exposed
-service. Only services whose configuration changed are recreated. Compose
+service. Only services whose configuration changed are recreated, and the
+deploy succeeds once the ingress routes to the exposed service. Compose
 stops a container before starting its replacement, so unlike single-image
 apps a changed service is briefly down during a deploy.
 
