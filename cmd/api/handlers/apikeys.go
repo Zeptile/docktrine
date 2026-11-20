@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/Zeptile/docktrine/cmd/api/middleware"
 	"github.com/Zeptile/docktrine/internal/database"
 	"github.com/Zeptile/docktrine/internal/logger"
 	"github.com/gofiber/fiber/v2"
@@ -20,6 +21,32 @@ type apiKeyNameRequest struct {
 	Name string `json:"name"`
 }
 
+// ownKeysOnly is the user whose keys a non-admin may see and change, or
+// nil for admins, who manage every key.
+func ownKeysOnly(c *fiber.Ctx) *int64 {
+	p := middleware.GetPrincipal(c)
+	if database.RoleAtLeast(p.Role(), database.RoleAdmin) {
+		return nil
+	}
+	return p.UserID()
+}
+
+// keyParam loads the key in the path, if the principal may manage it.
+func (h *Handler) keyParam(c *fiber.Ctx) (*database.APIKey, error) {
+	id, err := keyIDParam(c)
+	if id == 0 {
+		return nil, err
+	}
+	key, err := h.db.GetAPIKey(id)
+	if err != nil {
+		return nil, c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	if own := ownKeysOnly(c); key == nil || (own != nil && (key.UserID == nil || *key.UserID != *own)) {
+		return nil, c.Status(404).JSON(fiber.Map{"error": "API key not found"})
+	}
+	return key, nil
+}
+
 func keyIDParam(c *fiber.Ctx) (int64, error) {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil || id < 1 {
@@ -30,17 +57,20 @@ func keyIDParam(c *fiber.Ctx) (int64, error) {
 
 // ListAPIKeys godoc
 // @Summary List API keys
-// @Description Names and prefixes only; keys are never returned after creation
+// @Description Names and prefixes only; keys are never returned after creation. Admins see every key, others their own.
 // @Tags keys
 // @Produce json
 // @Success 200 {array} apiKeyResponse
 // @Router /keys [get]
 func (h *Handler) ListAPIKeys(c *fiber.Ctx) error {
-	keys, err := h.db.ListAPIKeys()
+	keys, err := h.db.ListAPIKeys(ownKeysOnly(c))
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	currentID, _ := c.Locals("api_key_id").(int64)
+	var currentID int64
+	if p := middleware.GetPrincipal(c); p.Key != nil {
+		currentID = p.Key.ID
+	}
 	result := make([]apiKeyResponse, len(keys))
 	for i, k := range keys {
 		result[i] = apiKeyResponse{APIKey: k, Current: k.ID == currentID}
@@ -50,7 +80,7 @@ func (h *Handler) ListAPIKeys(c *fiber.Ctx) error {
 
 // CreateAPIKey godoc
 // @Summary Create an API key
-// @Description The key is in the response only; store it right away
+// @Description The key is in the response only; store it right away. It acts with its creator's role.
 // @Tags keys
 // @Accept json
 // @Produce json
@@ -64,7 +94,7 @@ func (h *Handler) CreateAPIKey(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	key, err := h.db.CreateAPIKey(body.Name)
+	key, err := h.db.CreateAPIKey(body.Name, middleware.GetPrincipal(c).UserID())
 	if errors.Is(err, database.ErrAPIKeyNameTaken) {
 		return c.Status(409).JSON(fiber.Map{"error": err.Error()})
 	}
@@ -86,10 +116,11 @@ func (h *Handler) CreateAPIKey(c *fiber.Ctx) error {
 // @Success 200 {object} interface{}
 // @Router /keys/{id} [patch]
 func (h *Handler) RenameAPIKey(c *fiber.Ctx) error {
-	id, err := keyIDParam(c)
-	if id == 0 {
+	key, err := h.keyParam(c)
+	if key == nil {
 		return err
 	}
+	id := key.ID
 	var body apiKeyNameRequest
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
@@ -110,7 +141,7 @@ func (h *Handler) RenameAPIKey(c *fiber.Ctx) error {
 
 // RevokeAPIKey godoc
 // @Summary Revoke an API key
-// @Description Requests with the key fail from now on. The last key can't be revoked.
+// @Description Requests with the key fail from now on. While nobody can sign in with a password, the last key can't be revoked.
 // @Tags keys
 // @Produce json
 // @Param id path int true "API key id"
@@ -118,10 +149,11 @@ func (h *Handler) RenameAPIKey(c *fiber.Ctx) error {
 // @Failure 409 {object} interface{}
 // @Router /keys/{id} [delete]
 func (h *Handler) RevokeAPIKey(c *fiber.Ctx) error {
-	id, err := keyIDParam(c)
-	if id == 0 {
+	key, err := h.keyParam(c)
+	if key == nil {
 		return err
 	}
+	id := key.ID
 
 	found, err := h.db.RevokeAPIKey(id)
 	if errors.Is(err, database.ErrLastAPIKey) {

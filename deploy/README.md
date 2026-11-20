@@ -82,7 +82,7 @@ cat data/initial-api-key # the first API key; delete the file once saved
 ```
 
 The first key is named "Default API key". Rename it after whoever holds it,
-then create one key per person and system (see [API keys](#api-keys)).
+then create one key per person and system (see [Users and API keys](#users-and-api-keys)).
 
 Building on the gateway itself also works (`./build.sh image` there, then
 `docker compose up -d`).
@@ -121,25 +121,43 @@ docktrine servers ingress prd1-tor --port 8880
 
 The Servers page in the UI does the same.
 
-## API keys
+## Users and API keys
 
-Every key has full access. Give each person and system its own, so deploy
-history shows who deployed and a lost laptop costs one key, not all of them:
+People sign in to the UI with a username and password; scripts and the CLI
+use API keys. On first start there are no users yet, so sign in to the UI
+with the key from `data/initial-api-key`, open Users, and invite yourself.
+An invite is a link, valid for 7 days, where the person chooses their
+password.
+
+Each user has a role:
+
+| Role | Can |
+| --- | --- |
+| viewer | See apps, logs, containers and servers |
+| deployer | Also deploy, roll back, manage secrets, start and stop containers |
+| admin | Also manage servers, users and everyone's API keys |
+
+Each person creates their own API keys (on their Account page, or with the
+CLI); a key acts with its owner's role and stops working when the owner is
+removed. Keys made before there were users, or with `create-key` below, have
+no owner and act as admin:
 
 ```sh
-docktrine keys rename "Default API key" zeptile
-docktrine keys create alex-laptop   # prints the key once; send it securely
+docktrine keys create alex-laptop   # prints the key once
 docktrine keys create ci
 docktrine keys list
 docktrine keys revoke alex-laptop
 ```
 
-The API keys page in the UI does the same. Keys are stored hashed, so a copy
-of the database doesn't contain usable keys. The last key can't be revoked.
+Keys are stored hashed, so a copy of the database doesn't contain usable
+keys. Until someone can sign in with a password, the last key can't be
+revoked.
 
-If every key is lost, create one from a shell on the gateway:
+If you're locked out, from a shell on the gateway either make yourself an
+admin (prints a fresh invite link) or create an admin key:
 
 ```sh
+docker compose exec docktrine /app/docktrine-api invite zeptile
 docker compose exec docktrine /app/docktrine-api create-key zeptile
 ```
 

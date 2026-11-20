@@ -83,9 +83,11 @@ func (d *DockerClient) ListContainers(serverName string) ([]fiber.Map, error) {
 			"status":  inspect.State.Status,
 			"ports":   c.Ports,
 			"labels":  inspect.Config.Labels,
+			// A climbing count is a crash loop
+			"restarts": inspect.RestartCount,
 		})
 	}
-	
+
 	return containerDetails, nil
 }
 
@@ -108,7 +110,7 @@ func (d *DockerClient) RestartContainer(containerID string, serverName string, p
 
 		if err := cli.ContainerRemove(context.Background(), containerID, container.RemoveOptions{
 			RemoveVolumes: false,
-			Force:        true,
+			Force:         true,
 		}); err != nil {
 			return err
 		}
@@ -119,7 +121,7 @@ func (d *DockerClient) RestartContainer(containerID string, serverName string, p
 		}
 
 		reader, err := cli.ImagePull(context.Background(), imageName, image.PullOptions{
-			All:           false,
+			All:          false,
 			RegistryAuth: "",
 		})
 		if err != nil {
@@ -150,7 +152,7 @@ func (d *DockerClient) RestartContainer(containerID string, serverName string, p
 
 func (d *DockerClient) StartContainer(containerID string, serverName string) error {
 	cli, err := d.newClient(serverName)
-	if err != nil { 
+	if err != nil {
 		return err
 	}
 	defer cli.Close()
@@ -230,7 +232,7 @@ func normalizeImageName(imageName string) string {
 	if !strings.Contains(portionBeforeColon, "/") {
 		return portionBeforeColon
 	}
-	
+
 	parts := strings.Split(imageName, "/")
 	lastPart := parts[len(parts)-1]
 	if strings.Contains(lastPart, ":") {
@@ -251,4 +253,4 @@ func containsImageTag(imageName string) bool {
 		}
 	}
 	return false
-} 
+}

@@ -53,17 +53,17 @@ func TestInitialKeyIsHashed(t *testing.T) {
 func TestCreateRenameRevoke(t *testing.T) {
 	db, _ := openTestDB(t)
 
-	ci, err := db.CreateAPIKey("ci")
+	ci, err := db.CreateAPIKey("ci", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(ci.Key, ci.Prefix) || len(ci.Prefix) != apiKeyShownChars {
 		t.Errorf("prefix %q doesn't match key %q", ci.Prefix, ci.Key)
 	}
-	if _, err := db.CreateAPIKey("ci"); !errors.Is(err, ErrAPIKeyNameTaken) {
+	if _, err := db.CreateAPIKey("ci", nil); !errors.Is(err, ErrAPIKeyNameTaken) {
 		t.Errorf("duplicate name: got %v", err)
 	}
-	if _, err := db.CreateAPIKey("  "); err == nil {
+	if _, err := db.CreateAPIKey("  ", nil); err == nil {
 		t.Error("blank name accepted")
 	}
 
@@ -77,7 +77,7 @@ func TestCreateRenameRevoke(t *testing.T) {
 		t.Errorf("renamed key: %+v", k)
 	}
 
-	keys, _ := db.ListAPIKeys()
+	keys, _ := db.ListAPIKeys(nil)
 	if len(keys) != 2 {
 		t.Fatalf("want 2 keys, got %d", len(keys))
 	}
@@ -94,7 +94,7 @@ func TestCreateRenameRevoke(t *testing.T) {
 
 func TestTouchIsThrottled(t *testing.T) {
 	db, _ := openTestDB(t)
-	k, _ := db.CreateAPIKey("laptop")
+	k, _ := db.CreateAPIKey("laptop", nil)
 
 	if err := db.TouchAPIKey(k.ID); err != nil {
 		t.Fatal(err)
@@ -180,7 +180,7 @@ func TestMigratePlaintextKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db2.Close()
-	keys, _ := db2.ListAPIKeys()
+	keys, _ := db2.ListAPIKeys(nil)
 	if len(keys) != 3 {
 		t.Errorf("want 3 keys after reopening, got %d", len(keys))
 	}

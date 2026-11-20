@@ -16,6 +16,7 @@ type apiKeyInfo struct {
 	Prefix     string     `json:"prefix"`
 	CreatedAt  time.Time  `json:"created_at"`
 	LastUsedAt *time.Time `json:"last_used_at"`
+	Owner      string     `json:"owner"`
 	Current    bool       `json:"current"`
 }
 
@@ -52,7 +53,8 @@ func init() {
 		Short: "Manage API keys",
 		Long: `Each person or system (laptop, CI) should have its own key: deploy
 history shows the key's name, and a key can be revoked on its own.
-Every key has full access.`,
+A key acts with the role of the user who created it; admins see and
+manage everyone's keys.`,
 	}
 
 	listKeysCmd := &cobra.Command{
@@ -65,7 +67,7 @@ Every key has full access.`,
 				return err
 			}
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "ID\tNAME\tKEY\tCREATED\tLAST USED")
+			fmt.Fprintln(w, "ID\tNAME\tOWNER\tKEY\tCREATED\tLAST USED")
 			for _, k := range keys {
 				name := k.Name
 				if k.Current {
@@ -75,7 +77,11 @@ Every key has full access.`,
 				if k.LastUsedAt != nil {
 					lastUsed = ago(*k.LastUsedAt)
 				}
-				fmt.Fprintf(w, "%d\t%s\t%s…\t%s\t%s\n", k.ID, name, k.Prefix, ago(k.CreatedAt), lastUsed)
+				owner := k.Owner
+				if owner == "" {
+					owner = "(admin key)"
+				}
+				fmt.Fprintf(w, "%d\t%s\t%s\t%s…\t%s\t%s\n", k.ID, name, owner, k.Prefix, ago(k.CreatedAt), lastUsed)
 			}
 			return w.Flush()
 		},

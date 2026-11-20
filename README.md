@@ -216,7 +216,7 @@ For `preview`, they target the current git branch, or `--branch`.
 | `servers health <name>` | Check a node is reachable; Docker and ingress status. |
 | `servers ingress <name>` | Install or update the node's Traefik. `--port` (default 8880), `--bind`. |
 | `servers prune <name>` | Remove dangling images. `--all` removes every image no container uses, including ones Docktrine didn't create. |
-| `keys list\|create\|rename\|revoke` | See [API keys](deploy/README.md#api-keys). |
+| `keys list\|create\|rename\|revoke` | See [Users and API keys](deploy/README.md#users-and-api-keys). |
 | `containers ...` | Act on individual containers of a node directly. |
 
 ## Development

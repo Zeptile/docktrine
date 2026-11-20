@@ -68,7 +68,7 @@ func NewDatabaseConnection() (*DB, error) {
 	}
 
 	if keyCount == 0 {
-		apiKey, err := database.CreateAPIKey("Default API key")
+		apiKey, err := database.CreateAPIKey("Default API key", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -93,6 +93,7 @@ func (db *DB) createTables() error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
+		usersTables,
 		apiKeysTable,
 		`CREATE TABLE IF NOT EXISTS apps (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -155,6 +156,7 @@ func (db *DB) migrate() error {
 	columns := []struct{ table, column, definition string }{
 		{"servers", "ingress_host", "TEXT"},
 		{"servers", "ingress_port", "INTEGER"},
+		{"api_keys", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"},
 	}
 
 	for _, col := range columns {

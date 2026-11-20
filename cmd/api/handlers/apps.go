@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Zeptile/docktrine/cmd/api/middleware"
 	"github.com/Zeptile/docktrine/internal/database"
 	"github.com/Zeptile/docktrine/internal/logger"
 	"github.com/Zeptile/docktrine/internal/manifest"
@@ -15,8 +16,8 @@ import (
 )
 
 func createdBy(c *fiber.Ctx) string {
-	if desc, ok := c.Locals("api_key_name").(string); ok && desc != "" {
-		return desc
+	if p := middleware.GetPrincipal(c); p != nil {
+		return p.Name()
 	}
 	return "api"
 }
@@ -112,6 +113,15 @@ func (h *Handler) GetDeployment(c *fiber.Ctx) error {
 	return c.JSON(dep)
 }
 
+// How many past deployments each environment in the app list carries
+const appHistory = 12
+
+type historyEntry struct {
+	ID        int64     `json:"id"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // ListApps godoc
 // @Summary List app environments
 // @Description Every deployed environment with its latest deployment
@@ -128,13 +138,18 @@ func (h *Handler) ListApps(c *fiber.Ctx) error {
 	result := []fiber.Map{}
 	for i := range envs {
 		env := &envs[i]
-		latest, err := h.db.ListDeployments(env.ID, 1)
+		recent, err := h.db.ListDeployments(env.ID, appHistory)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
-		item := fiber.Map{"environment": env}
-		if len(latest) > 0 {
-			item["latest_deployment"] = latest[0]
+		// The last few outcomes, oldest first, for a glance at how deploys go
+		history := make([]historyEntry, len(recent))
+		for j, d := range recent {
+			history[len(recent)-1-j] = historyEntry{d.ID, d.Status, d.CreatedAt}
+		}
+		item := fiber.Map{"environment": env, "history": history}
+		if len(recent) > 0 {
+			item["latest_deployment"] = recent[0]
 		}
 		if env.CurrentDeploymentID != nil {
 			if current, err := h.db.GetDeployment(*env.CurrentDeploymentID); err == nil && current != nil {

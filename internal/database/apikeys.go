@@ -20,7 +20,7 @@ const (
 
 var (
 	ErrAPIKeyNameTaken = errors.New("an API key with this name already exists")
-	ErrLastAPIKey      = errors.New("can't revoke the last API key")
+	ErrLastAPIKey      = errors.New("can't revoke the last API key while nobody can sign in with a password")
 )
 
 type APIKey struct {
@@ -29,6 +29,10 @@ type APIKey struct {
 	Prefix     string     `json:"prefix"`
 	CreatedAt  time.Time  `json:"created_at"`
 	LastUsedAt *time.Time `json:"last_used_at"`
+	// Keys act with their owner's role; keys without an owner (made before
+	// there were users, or with create-key) act as admin
+	UserID *int64 `json:"user_id"`
+	Owner  string `json:"owner"`
 }
 
 // NewAPIKey is returned on creation only, with the key in clear.
@@ -37,17 +41,27 @@ type NewAPIKey struct {
 	Key string `json:"key"`
 }
 
-func generateAPIKey() (string, error) {
+func randomToken(prefix string) (string, error) {
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}
-	return apiKeyPrefix + hex.EncodeToString(bytes), nil
+	return prefix + hex.EncodeToString(bytes), nil
+}
+
+// hashToken is for high-entropy secrets (keys, sessions, invites), which
+// don't need a slow hash.
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+func generateAPIKey() (string, error) {
+	return randomToken(apiKeyPrefix)
 }
 
 func hashAPIKey(key string) string {
-	sum := sha256.Sum256([]byte(key))
-	return hex.EncodeToString(sum[:])
+	return hashToken(key)
 }
 
 func displayPrefix(key string) string {
@@ -57,32 +71,50 @@ func displayPrefix(key string) string {
 	return key
 }
 
-const apiKeyColumns = `id, name, prefix, created_at, last_used_at`
+const apiKeySelect = `SELECT k.id, k.name, k.prefix, k.created_at, k.last_used_at, k.user_id,
+	COALESCE(u.username, '') FROM api_keys k LEFT JOIN users u ON u.id = k.user_id`
 
 func scanAPIKey(row interface{ Scan(...any) error }) (*APIKey, error) {
 	var k APIKey
 	var lastUsed sql.NullTime
-	if err := row.Scan(&k.ID, &k.Name, &k.Prefix, &k.CreatedAt, &lastUsed); err != nil {
+	var userID sql.NullInt64
+	if err := row.Scan(&k.ID, &k.Name, &k.Prefix, &k.CreatedAt, &lastUsed, &userID, &k.Owner); err != nil {
 		return nil, err
 	}
 	if lastUsed.Valid {
 		k.LastUsedAt = &lastUsed.Time
 	}
+	if userID.Valid {
+		k.UserID = &userID.Int64
+	}
 	return &k, nil
 }
 
-// AuthenticateAPIKey returns the key matching a presented secret, or nil.
-func (db *DB) AuthenticateAPIKey(key string) (*APIKey, error) {
-	k, err := scanAPIKey(db.QueryRow(
-		`SELECT `+apiKeyColumns+` FROM api_keys WHERE key_hash = ?`, hashAPIKey(key)))
+func (db *DB) GetAPIKey(id int64) (*APIKey, error) {
+	k, err := scanAPIKey(db.QueryRow(apiKeySelect+` WHERE k.id = ?`, id))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	return k, err
 }
 
-func (db *DB) ListAPIKeys() ([]APIKey, error) {
-	rows, err := db.Query(`SELECT ` + apiKeyColumns + ` FROM api_keys ORDER BY id`)
+// AuthenticateAPIKey returns the key matching a presented secret, or nil.
+func (db *DB) AuthenticateAPIKey(key string) (*APIKey, error) {
+	k, err := scanAPIKey(db.QueryRow(apiKeySelect+` WHERE k.key_hash = ?`, hashAPIKey(key)))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return k, err
+}
+
+// ListAPIKeys returns every key, or only a user's keys when userID is set.
+func (db *DB) ListAPIKeys(userID *int64) ([]APIKey, error) {
+	query, args := apiKeySelect, []any{}
+	if userID != nil {
+		query += ` WHERE k.user_id = ?`
+		args = append(args, *userID)
+	}
+	rows, err := db.Query(query+` ORDER BY k.id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +131,9 @@ func (db *DB) ListAPIKeys() ([]APIKey, error) {
 	return keys, rows.Err()
 }
 
-func (db *DB) CreateAPIKey(name string) (*NewAPIKey, error) {
+// CreateAPIKey makes a key for a user, or an admin key without an owner
+// when userID is nil.
+func (db *DB) CreateAPIKey(name string, userID *int64) (*NewAPIKey, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
@@ -110,8 +144,8 @@ func (db *DB) CreateAPIKey(name string) (*NewAPIKey, error) {
 	}
 
 	result, err := db.Exec(`
-		INSERT INTO api_keys (name, key_hash, prefix) VALUES (?, ?, ?)`,
-		name, hashAPIKey(key), displayPrefix(key))
+		INSERT INTO api_keys (name, key_hash, prefix, user_id) VALUES (?, ?, ?, ?)`,
+		name, hashAPIKey(key), displayPrefix(key), userID)
 	if isUniqueViolation(err, "api_keys.name") {
 		return nil, ErrAPIKeyNameTaken
 	}
@@ -123,7 +157,7 @@ func (db *DB) CreateAPIKey(name string) (*NewAPIKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	created, err := scanAPIKey(db.QueryRow(`SELECT `+apiKeyColumns+` FROM api_keys WHERE id = ?`, id))
+	created, err := db.GetAPIKey(id)
 	if err != nil {
 		return nil, err
 	}
@@ -147,8 +181,9 @@ func (db *DB) RenameAPIKey(id int64, name string) (bool, error) {
 	return n > 0, err
 }
 
-// RevokeAPIKey deletes a key, refusing to delete the last one so the API
-// can't lock everyone out. Returns false if no key has this ID.
+// RevokeAPIKey deletes a key. While nobody can sign in with a password it
+// refuses to delete the last key, so the API can't lock everyone out.
+// Returns false if no key has this ID.
 func (db *DB) RevokeAPIKey(id int64) (bool, error) {
 	tx, err := db.Begin()
 	if err != nil {
@@ -156,7 +191,7 @@ func (db *DB) RevokeAPIKey(id int64) (bool, error) {
 	}
 	defer tx.Rollback()
 
-	var exists, total int
+	var exists, total, passwords int
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM api_keys WHERE id = ?`, id).Scan(&exists); err != nil {
 		return false, err
 	}
@@ -166,7 +201,10 @@ func (db *DB) RevokeAPIKey(id int64) (bool, error) {
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM api_keys`).Scan(&total); err != nil {
 		return false, err
 	}
-	if total <= 1 {
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM users WHERE password_hash IS NOT NULL`).Scan(&passwords); err != nil {
+		return false, err
+	}
+	if total <= 1 && passwords == 0 {
 		return false, ErrLastAPIKey
 	}
 	if _, err := tx.Exec(`DELETE FROM api_keys WHERE id = ?`, id); err != nil {
@@ -272,5 +310,6 @@ const apiKeysTable = `CREATE TABLE IF NOT EXISTS api_keys (
 	key_hash TEXT UNIQUE NOT NULL,
 	prefix TEXT NOT NULL,
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-	last_used_at DATETIME
+	last_used_at DATETIME,
+	user_id INTEGER REFERENCES users(id) ON DELETE CASCADE
 )`
