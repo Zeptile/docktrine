@@ -1,0 +1,262 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* An engine room. Light: enamel panels in a steel-grey room. Dark: the
+   boiler room at night. Brass for anything you act on, verdigris for live,
+   copper and amber while steam is up, red for failures.
+   Colors are RGB channels so Tailwind can apply opacity (bg-success/10). */
+@layer base {
+  :root {
+    --background: 228 224 216;
+    --card: 250 248 243;
+    --muted: 238 234 226;
+    --plate: 218 212 199;
+    --plate-deep: 204 196 180;
+    --foreground: 38 32 26;
+    --muted-foreground: 104 93 80;
+    --border: 202 193 177;
+    --input: 168 156 136;
+    --brass: 150 106 30;
+    --brass-ink: 34 26 16;
+    --copper: 160 84 42;
+    --link: 146 74 30;
+    --success: 38 118 99;
+    --warning: 150 92 16;
+    --amber: 214 150 40;
+    --danger: 172 50 38;
+    --danger-ink: 255 255 255;
+    --iron: 38 33 28;
+    --iron-foreground: 238 228 208;
+    --iron-muted: 170 156 132;
+    --terminal: 30 26 22;
+    --terminal-foreground: 236 220 182;
+    --rivet: 150 138 118;
+    color-scheme: light;
+  }
+
+  .dark {
+    --background: 25 22 19;
+    --card: 35 31 27;
+    --muted: 43 38 33;
+    --plate: 46 41 35;
+    --plate-deep: 60 53 45;
+    --foreground: 236 228 212;
+    --muted-foreground: 168 156 136;
+    --border: 66 58 49;
+    --input: 96 85 71;
+    --brass: 218 176 96;
+    --brass-ink: 34 26 16;
+    --copper: 214 132 84;
+    --link: 226 164 108;
+    --success: 112 188 164;
+    --warning: 232 178 86;
+    --amber: 232 178 86;
+    --danger: 232 108 92;
+    --danger-ink: 25 22 19;
+    --iron: 17 15 13;
+    --iron-foreground: 236 228 212;
+    --iron-muted: 150 138 118;
+    --terminal: 17 15 13;
+    --terminal-foreground: 236 220 182;
+    --rivet: 92 82 68;
+    color-scheme: dark;
+  }
+
+  * {
+    @apply border-border;
+  }
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    @apply bg-background text-foreground font-sans text-[15px] leading-normal;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+  code {
+    @apply font-mono text-[0.85em] px-1 py-px rounded-sm bg-muted;
+  }
+  ::selection {
+    background: rgb(var(--brass) / 0.3);
+  }
+}
+
+@layer components {
+  /* Names of apps and environments, cast like an engine maker's plate */
+  .engraved {
+    @apply font-slab font-semibold;
+  }
+  .page-title {
+    @apply font-slab text-[2rem] leading-tight font-bold;
+  }
+  .section-title {
+    @apply font-slab text-lg font-semibold;
+  }
+  .input {
+    @apply w-full h-10 px-3 rounded-md border border-input bg-card text-foreground text-sm
+      placeholder:text-muted-foreground/70 transition-colors
+      shadow-[inset_0_1px_2px_rgb(0_0_0/0.08)]
+      disabled:opacity-60;
+  }
+  /* A soft brass halo rather than the global double ring, which crowds a
+     field that already has a border */
+  .input:focus-visible {
+    @apply ring-0 ring-offset-0 border-brass;
+    box-shadow:
+      inset 0 1px 2px rgb(0 0 0 / 0.08),
+      0 0 0 3px rgb(var(--brass) / 0.22);
+  }
+  /* Our own chevron instead of the browser's, tinted per theme */
+  select.input {
+    @apply appearance-none pr-9 cursor-pointer bg-no-repeat;
+    background-position: right 0.7rem center;
+    background-size: 14px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23685d50' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+  .dark select.input {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a89c88' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+  select.input:hover {
+    @apply border-brass/60;
+  }
+  /* The same on the log panel's dark toolbar */
+  .select-on-iron {
+    @apply appearance-none cursor-pointer bg-no-repeat;
+    background-position: right 0.5rem center;
+    background-size: 12px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23aa9c84' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+  /* The open list is drawn by the browser; this is as far as it goes */
+  select.input option {
+    background-color: rgb(var(--card));
+    color: rgb(var(--foreground));
+  }
+  .label {
+    @apply block text-sm font-medium mb-1.5;
+  }
+  .hint {
+    @apply text-[13px] text-muted-foreground mt-1.5;
+  }
+  .terminal {
+    background: rgb(var(--terminal));
+    color: rgb(var(--terminal-foreground));
+    box-shadow:
+      0 0 0 1px rgb(var(--rivet)),
+      inset 0 2px 10px rgb(0 0 0 / 0.55);
+    @apply font-mono text-xs leading-relaxed;
+  }
+
+  /* Brass, the same in both themes: it's a material, not a color. Matte
+     and flat, with only a faint sheen and a darker edge to say metal. */
+  .brass-fill {
+    background-color: #c99b47;
+    background-image: linear-gradient(180deg, rgb(255 255 255 / 0.1), rgb(255 255 255 / 0) 60%);
+    color: #231a0e;
+    border: 1px solid #a57b2f;
+    transition:
+      background-color 120ms,
+      border-color 120ms;
+  }
+  .brass-fill:hover {
+    background-color: #d5a952;
+    border-color: #b0853a;
+  }
+  .brass-fill:active {
+    background-color: #bd8f3e;
+  }
+
+  /* The brass edge under the top bar: the same flat brass as the buttons,
+     with the same darker lip */
+  .brass-trim {
+    height: 4px;
+    background-color: #c99b47;
+    border-bottom: 1px solid #a57b2f;
+  }
+
+  /* A panel fixed with a rivet in each corner */
+  .riveted {
+    --r: radial-gradient(circle at 40% 35%, rgb(255 255 255 / 0.55) 0 0.8px, rgb(var(--rivet)) 1.4px 2.6px, transparent 3px);
+    background:
+      var(--r) left 7px top 7px / 7px 7px no-repeat,
+      var(--r) right 7px top 7px / 7px 7px no-repeat,
+      var(--r) left 7px bottom 7px / 7px 7px no-repeat,
+      var(--r) right 7px bottom 7px / 7px 7px no-repeat,
+      rgb(var(--card));
+    @apply border rounded-lg shadow-[0_1px_0_rgb(255_255_255/0.6)_inset,0_2px_6px_-3px_rgb(0_0_0/0.25)];
+  }
+  .dark .riveted {
+    @apply shadow-[0_1px_0_rgb(255_255_255/0.04)_inset,0_2px_8px_-2px_rgb(0_0_0/0.6)];
+  }
+
+  /* Deployment numbers glow like Nixie tube digits */
+  .nixie {
+    @apply inline-block font-mono text-[15px] leading-none px-1.5 py-1 rounded-[3px] tabular-nums;
+    background: linear-gradient(180deg, #1d1712, #2c231b);
+    color: #ffb15c;
+    text-shadow:
+      0 0 4px rgb(255 140 40 / 0.9),
+      0 0 10px rgb(255 110 20 / 0.5);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06), 0 0 0 1px rgb(var(--rivet));
+  }
+
+  /* Diamond tread plate, for the floor of the engine room */
+  .treadplate {
+    background-color: rgb(var(--background));
+    background-image:
+      repeating-linear-gradient(45deg, rgb(var(--foreground) / 0.035) 0 1.5px, transparent 1.5px 16px),
+      repeating-linear-gradient(-45deg, rgb(var(--foreground) / 0.035) 0 1.5px, transparent 1.5px 16px);
+  }
+
+}
+
+/* Indicator lamps in brass bezels: verdigris is live, amber flickers while
+   deploying, red failed, a dark lamp is off. */
+@layer components {
+  .light {
+    @apply inline-block w-2.5 h-2.5 rounded-full shrink-0 bg-current;
+    box-shadow: 0 0 0 2px rgb(var(--rivet));
+  }
+  .light-live {
+    @apply text-success;
+    box-shadow:
+      0 0 0 2px rgb(var(--rivet)),
+      0 0 8px 1px rgb(var(--success) / 0.6);
+  }
+  .light-deploying {
+    @apply text-amber;
+    box-shadow:
+      0 0 0 2px rgb(var(--rivet)),
+      0 0 9px 2px rgb(var(--amber) / 0.7);
+    animation: flicker 1.4s ease-in-out infinite;
+  }
+  .light-queued {
+    @apply text-amber/40;
+  }
+  .light-failed {
+    @apply text-destructive;
+    box-shadow:
+      0 0 0 2px rgb(var(--rivet)),
+      0 0 8px 1px rgb(var(--danger) / 0.55);
+  }
+  .light-off {
+    @apply text-foreground/15;
+  }
+}
+
+@keyframes flicker {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

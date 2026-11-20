@@ -2,7 +2,6 @@ package docker
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -25,28 +24,31 @@ func NewDockerClient(db *database.DB) *DockerClient {
 }
 
 func (d *DockerClient) newClient(serverName string) (*client.Client, error) {
-	var server *database.Server
-	var err error
-
-	if serverName != "" {
-		server, err = d.db.GetServerByName(serverName)
-	} else {
-		server, err = d.db.GetDefaultServer()
-	}
-
+	server, err := d.db.ResolveServer(serverName)
 	if err != nil {
 		return nil, err
 	}
+	return Connect(server, client.WithTimeout(15*time.Second))
+}
 
-	if server == nil {
-		return nil, fmt.Errorf("server not found")
+// Connect opens a Docker API client for a server. Hosts may be unix://,
+// tcp:// or ssh://user@host[:port] (which needs docker on the remote side).
+func Connect(server *database.Server, opts ...client.Opt) (*client.Client, error) {
+	base := []client.Opt{client.WithAPIVersionNegotiation()}
+
+	if strings.HasPrefix(server.Host, "ssh://") {
+		dialer, err := sshDialer(server.Host)
+		if err != nil {
+			return nil, err
+		}
+		base = append(base,
+			client.WithHost("http://docker.ssh"),
+			client.WithDialContext(dialer))
+	} else {
+		base = append(base, client.WithHost(server.Host))
 	}
 
-	return client.NewClientWithOpts(
-		client.WithHost(server.Host),
-		client.WithAPIVersionNegotiation(),
-		client.WithTimeout(15*time.Second),
-	)
+	return client.NewClientWithOpts(append(base, opts...)...)
 }
 
 func (d *DockerClient) ListContainers(serverName string) ([]fiber.Map, error) {
@@ -70,18 +72,22 @@ func (d *DockerClient) ListContainers(serverName string) ([]fiber.Map, error) {
 			continue
 		}
 
+		// image is the reference it was started from, e.g. postgres:16;
+		// inspect only has the digest
 		containerDetails = append(containerDetails, fiber.Map{
 			"id":      inspect.ID,
 			"name":    inspect.Name,
-			"image":   inspect.Image,
+			"image":   c.Image,
 			"state":   inspect.State,
 			"created": inspect.Created,
 			"status":  inspect.State.Status,
 			"ports":   c.Ports,
 			"labels":  inspect.Config.Labels,
+			// A climbing count is a crash loop
+			"restarts": inspect.RestartCount,
 		})
 	}
-	
+
 	return containerDetails, nil
 }
 
@@ -104,7 +110,7 @@ func (d *DockerClient) RestartContainer(containerID string, serverName string, p
 
 		if err := cli.ContainerRemove(context.Background(), containerID, container.RemoveOptions{
 			RemoveVolumes: false,
-			Force:        true,
+			Force:         true,
 		}); err != nil {
 			return err
 		}
@@ -115,7 +121,7 @@ func (d *DockerClient) RestartContainer(containerID string, serverName string, p
 		}
 
 		reader, err := cli.ImagePull(context.Background(), imageName, image.PullOptions{
-			All:           false,
+			All:          false,
 			RegistryAuth: "",
 		})
 		if err != nil {
@@ -146,7 +152,7 @@ func (d *DockerClient) RestartContainer(containerID string, serverName string, p
 
 func (d *DockerClient) StartContainer(containerID string, serverName string) error {
 	cli, err := d.newClient(serverName)
-	if err != nil { 
+	if err != nil {
 		return err
 	}
 	defer cli.Close()
@@ -226,7 +232,7 @@ func normalizeImageName(imageName string) string {
 	if !strings.Contains(portionBeforeColon, "/") {
 		return portionBeforeColon
 	}
-	
+
 	parts := strings.Split(imageName, "/")
 	lastPart := parts[len(parts)-1]
 	if strings.Contains(lastPart, ":") {
@@ -247,4 +253,4 @@ func containsImageTag(imageName string) bool {
 		}
 	}
 	return false
-} 
+}

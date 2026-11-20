@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/Zeptile/docktrine/internal/database"
+	"github.com/Zeptile/docktrine/internal/deploy"
+	"github.com/Zeptile/docktrine/internal/secrets"
 	"github.com/Zeptile/docktrine/internal/docker"
 	"github.com/Zeptile/docktrine/internal/logger"
 	"github.com/docker/docker/api/types/container"
@@ -12,14 +14,18 @@ import (
 )
 
 type Handler struct {
-	docker *docker.DockerClient
-	db     *database.DB
+	docker   *docker.DockerClient
+	db       *database.DB
+	deployer *deploy.Deployer
+	box      *secrets.Box
 }
 
-func NewHandler(db *database.DB) *Handler {
+func NewHandler(db *database.DB, deployer *deploy.Deployer, box *secrets.Box) *Handler {
 	return &Handler{
-		docker: docker.NewDockerClient(db),
-		db:     db,
+		docker:   docker.NewDockerClient(db),
+		db:       db,
+		deployer: deployer,
+		box:      box,
 	}
 }
 

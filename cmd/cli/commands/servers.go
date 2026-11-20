@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -16,6 +15,8 @@ type ServerResponse struct {
 	Host        string    `json:"host"`
 	Description string    `json:"description"`
 	IsDefault   bool      `json:"is_default"`
+	IngressHost string    `json:"ingress_host"`
+	IngressPort int       `json:"ingress_port"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -28,7 +29,7 @@ var (
 )
 
 func fetchServers() error {
-	resp, err := http.Get(fmt.Sprintf("%s/servers", apiURL))
+	resp, err := makeRequest("GET", fmt.Sprintf("%s/servers", apiURL), nil)
 	if err != nil {
 		return err
 	}
@@ -81,6 +82,9 @@ func init() {
 				if server.Description != "" {
 					fmt.Printf("Description: %s\n", server.Description)
 				}
+				if server.IngressHost != "" {
+					fmt.Printf("Ingress: %s:%d\n", server.IngressHost, server.IngressPort)
+				}
 				fmt.Println()
 			}
 		},
@@ -94,12 +98,16 @@ func init() {
 			host, _ := cmd.Flags().GetString("host")
 			desc, _ := cmd.Flags().GetString("description")
 			isDefault, _ := cmd.Flags().GetBool("default")
+			ingressHost, _ := cmd.Flags().GetString("ingress-host")
+			ingressPort, _ := cmd.Flags().GetInt("ingress-port")
 
 			serverData := map[string]interface{}{
-				"name":        name,
-				"host":        host,
-				"description": desc,
-				"is_default":  isDefault,
+				"name":         name,
+				"host":         host,
+				"description":  desc,
+				"is_default":   isDefault,
+				"ingress_host": ingressHost,
+				"ingress_port": ingressPort,
 			}
 
 			jsonData, err := json.Marshal(serverData)
@@ -132,17 +140,7 @@ func init() {
 		Run: func(cmd *cobra.Command, args []string) {
 			name := args[0]
 			
-			req, err := http.NewRequest(
-				"DELETE",
-				fmt.Sprintf("%s/servers/%s", apiURL, name),
-				nil,
-			)
-			if err != nil {
-				fmt.Printf("Error: %v\n", err)
-				return
-			}
-
-			resp, err := http.DefaultClient.Do(req)
+			resp, err := makeRequest("DELETE", fmt.Sprintf("%s/servers/%s", apiURL, name), nil)
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 				return
@@ -166,7 +164,10 @@ func init() {
 	addServerCmd.Flags().String("host", "", "Server host (e.g., unix:///var/run/docker.sock)")
 	addServerCmd.Flags().String("description", "", "Server description")
 	addServerCmd.Flags().Bool("default", false, "Set as default server")
+	addServerCmd.Flags().String("ingress-host", "", "Host the gateway forwards this node's traffic to")
+	addServerCmd.Flags().Int("ingress-port", 0, "Port the gateway forwards this node's traffic to")
 
 	serversCmd.AddCommand(listServersCmd, addServerCmd, removeServerCmd)
+	serversCmd.AddCommand(serverOpsCommands()...)
 	rootCmd.AddCommand(serversCmd)
 } 

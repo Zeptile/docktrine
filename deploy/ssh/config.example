@@ -1,0 +1,20 @@
+# Copy to deploy/ssh/config. Docktrine opens an ssh connection for every
+# Docker API call; sharing one connection per node makes the UI and deploys
+# much faster (about 10x per request in testing).
+Host *
+  ControlMaster auto
+  ControlPath /tmp/ssh-%C
+  ControlPersist 10m
+  ServerAliveInterval 30
+
+# Nodes are added in Docktrine as ssh://deploy@<Host>, e.g. ssh://deploy@prd1-tor
+
+Host prd1-tor
+  HostName prd1-tor.zeptile.software
+  User deploy
+
+# A node only reachable through a tunnel or jump host:
+# Host onsite
+#   HostName 10.0.0.20
+#   User deploy
+#   ProxyJump tunnel-user@onsite-bastion.example

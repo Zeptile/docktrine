@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -13,9 +14,15 @@ var (
 	apiKey  string
 	rootCmd = &cobra.Command{
 		Use:   "docktrine",
-		Short: "Docktrine CLI - Manage Docker containers",
+		Short: "Docktrine CLI - Deploy and manage apps on your Docker nodes",
 		Long:  `A CLI tool for managing Docker containers through the Docktrine API.`,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Name() == "init" || cmd.Name() == "help" {
+				return nil
+			}
+			
 			if !cmd.Flags().Changed("api-url") {
 				if envURL := os.Getenv("DOCKTRINE_API_URL"); envURL != "" {
 					apiURL = envURL
@@ -35,6 +42,8 @@ var (
 			if apiKey == "" {
 				return fmt.Errorf("DOCKTRINE_API_KEY environment variable or --api-key flag must be set")
 			}
+			
+			apiURL = strings.TrimRight(apiURL, "/") + "/api"
 			
 			return nil
 		},

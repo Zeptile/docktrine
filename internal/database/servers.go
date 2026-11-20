@@ -7,64 +7,85 @@ import (
 )
 
 type Server struct {
-	ID          int64
-	Name        string
-	Host        string
-	Description string
-	IsDefault   bool
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Host        string `json:"host"`
+	Description string `json:"description"`
+	IsDefault   bool   `json:"is_default"`
+	// IngressHost/IngressPort are where the gateway (NPM) forwards traffic
+	// for this node, e.g. the gateway end of an SSH tunnel to the node's ingress.
+	IngressHost string    `json:"ingress_host"`
+	IngressPort int       `json:"ingress_port"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+const serverColumns = `id, name, host, COALESCE(description, ''), is_default,
+	COALESCE(ingress_host, ''), COALESCE(ingress_port, 0), created_at, updated_at`
+
+func scanServer(row interface{ Scan(...any) error }) (*Server, error) {
+	var s Server
+	err := row.Scan(&s.ID, &s.Name, &s.Host, &s.Description, &s.IsDefault,
+		&s.IngressHost, &s.IngressPort, &s.CreatedAt, &s.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
 }
 
 func (db *DB) GetServers() ([]Server, error) {
-	rows, err := db.Query(`SELECT id, name, host, description, is_default, created_at, updated_at FROM servers`)
+	rows, err := db.Query(`SELECT ` + serverColumns + ` FROM servers`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var servers []Server
+	servers := []Server{}
 	for rows.Next() {
-		var s Server
-		err := rows.Scan(&s.ID, &s.Name, &s.Host, &s.Description, &s.IsDefault, &s.CreatedAt, &s.UpdatedAt)
+		s, err := scanServer(rows)
 		if err != nil {
 			return nil, err
 		}
-		servers = append(servers, s)
+		servers = append(servers, *s)
 	}
 	return servers, nil
 }
 
 func (db *DB) GetServerByName(name string) (*Server, error) {
-	var s Server
-	err := db.QueryRow(`
-		SELECT id, name, host, description, is_default, created_at, updated_at 
-		FROM servers WHERE name = ?`, name).Scan(
-		&s.ID, &s.Name, &s.Host, &s.Description, &s.IsDefault, &s.CreatedAt, &s.UpdatedAt)
-	
+	s, err := scanServer(db.QueryRow(`SELECT `+serverColumns+` FROM servers WHERE name = ?`, name))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
-	if err != nil {
-		return nil, err
-	}
-	return &s, nil
+	return s, err
 }
 
 func (db *DB) GetDefaultServer() (*Server, error) {
-	var s Server
-	err := db.QueryRow(`
-		SELECT id, name, host, description, is_default, created_at, updated_at 
-		FROM servers WHERE is_default = 1`).Scan(
-		&s.ID, &s.Name, &s.Host, &s.Description, &s.IsDefault, &s.CreatedAt, &s.UpdatedAt)
-	
+	s, err := scanServer(db.QueryRow(`SELECT ` + serverColumns + ` FROM servers WHERE is_default = 1`))
 	if err == sql.ErrNoRows {
 		return nil, nil
+	}
+	return s, err
+}
+
+// ResolveServer returns the named server, or the default one when name is empty.
+func (db *DB) ResolveServer(name string) (*Server, error) {
+	var server *Server
+	var err error
+	if name != "" {
+		server, err = db.GetServerByName(name)
+	} else {
+		server, err = db.GetDefaultServer()
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &s, nil
+	if server == nil {
+		if name == "" {
+			return nil, fmt.Errorf("no default server configured")
+		}
+		return nil, fmt.Errorf("server %q not found", name)
+	}
+	return server, nil
 }
 
 func (db *DB) CreateServer(server *Server) error {
@@ -82,9 +103,10 @@ func (db *DB) CreateServer(server *Server) error {
 	}
 
 	result, err := tx.Exec(`
-		INSERT INTO servers (name, host, description, is_default)
-		VALUES (?, ?, ?, ?)`,
-		server.Name, server.Host, server.Description, server.IsDefault)
+		INSERT INTO servers (name, host, description, is_default, ingress_host, ingress_port)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		server.Name, server.Host, server.Description, server.IsDefault,
+		server.IngressHost, server.IngressPort)
 	if err != nil {
 		return err
 	}
@@ -94,6 +116,33 @@ func (db *DB) CreateServer(server *Server) error {
 		return err
 	}
 	server.ID = id
+
+	return tx.Commit()
+}
+
+func (db *DB) UpdateServer(server *Server) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if server.IsDefault {
+		_, err = tx.Exec(`UPDATE servers SET is_default = 0`)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = tx.Exec(`
+		UPDATE servers SET host = ?, description = ?, is_default = ?,
+			ingress_host = ?, ingress_port = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE name = ?`,
+		server.Host, server.Description, server.IsDefault,
+		server.IngressHost, server.IngressPort, server.Name)
+	if err != nil {
+		return err
+	}
 
 	return tx.Commit()
 }
@@ -114,4 +163,4 @@ func (db *DB) DeleteServer(name string) error {
 	}
 
 	return nil
-} 
+}
