@@ -4,7 +4,6 @@
   import { loadMe } from "$lib/session";
   import Button from "./ui/Button.svelte";
   import Logo from "./ui/Logo.svelte";
-  import Pipe from "./ui/Pipe.svelte";
   import Gauge from "./Gauge.svelte";
 
   let mode = $state<"password" | "key">("password");
@@ -46,8 +45,8 @@
 </script>
 
 <div class="min-h-screen treadplate">
-  <Pipe />
-  <div class="min-h-[calc(100vh-12px)] flex items-center justify-center px-4 py-12">
+  <div class="brass-trim" aria-hidden="true"></div>
+  <div class="min-h-[calc(100vh-4px)] flex items-center justify-center px-4 py-12">
         <div class="w-full max-w-sm riveted">
       <div class="px-7 pb-8 pt-7 sm:px-9">
         <div class="flex flex-col items-center text-center">

@@ -76,7 +76,7 @@
     <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
       <label class="flex items-center gap-2">
         Last
-        <select bind:value={tail} onchange={start} class="h-8 rounded-md bg-white/10 border border-white/15 px-2 text-[13px]">
+        <select bind:value={tail} onchange={start} class="select-on-iron h-8 rounded-md bg-white/10 border border-white/15 pl-2 pr-7 text-[13px] [&>option]:bg-[rgb(var(--terminal))]">
           <option value={100}>100</option>
           <option value={200}>200</option>
           <option value={1000}>1,000</option>

@@ -10,7 +10,6 @@
   import Invite from "./lib/components/Invite.svelte";
   import GoTo from "./lib/components/GoTo.svelte";
   import Logo from "./lib/components/ui/Logo.svelte";
-  import Pipe from "./lib/components/ui/Pipe.svelte";
   import ConfirmDialog from "./lib/components/ui/ConfirmDialog.svelte";
   import Toaster from "./lib/components/ui/Toaster.svelte";
   import { me, can, loadMe, signOut, displayName } from "./lib/session";
@@ -178,7 +177,7 @@
       </div>
     </div>
   </header>
-  <Pipe />
+  <div class="brass-trim" aria-hidden="true"></div>
 
   <main class="max-w-7xl mx-auto px-4 sm:px-6 py-8 lg:py-10">
     {#if $me.via === "key" && !$me.user}
