@@ -1,7 +1,11 @@
-import "@fontsource-variable/archivo/wdth";
-import "@fontsource-variable/jetbrains-mono";
-import "@fontsource/big-shoulders-stencil-display/latin-700";
-import "@fontsource/big-shoulders-stencil-display/latin-800";
+import "@fontsource/zilla-slab/500.css";
+import "@fontsource/zilla-slab/600.css";
+import "@fontsource/zilla-slab/700.css";
+import "@fontsource/ibm-plex-sans/400.css";
+import "@fontsource/ibm-plex-sans/500.css";
+import "@fontsource/ibm-plex-sans/600.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
 import "./app.css";
 import App from "./App.svelte";
 import { mount } from "svelte";

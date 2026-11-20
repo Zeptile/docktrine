@@ -12,15 +12,15 @@
   let { kind = "error", class: className, children }: Props = $props();
 
   const styles = {
-    error: "border-destructive/40 bg-destructive/10 text-destructive",
-    warning: "border-warning/40 bg-warning/10 text-warning",
-    success: "border-success/40 bg-success/10 text-success",
+    error: "border-l-destructive bg-destructive/[0.07] text-destructive",
+    warning: "border-l-amber bg-amber/10 text-warning",
+    success: "border-l-success bg-success/[0.07] text-success",
   };
 </script>
 
 <div
   role={kind === "error" ? "alert" : "status"}
-  class={cn("flex gap-2.5 rounded-md border px-4 py-3 text-sm", styles[kind], className)}
+  class={cn("flex gap-2.5 rounded-r-md border-l-[3px] px-4 py-3 text-sm", styles[kind], className)}
 >
   {#if kind === "error"}
     <CircleAlert class="w-4 h-4 mt-0.5 shrink-0" />

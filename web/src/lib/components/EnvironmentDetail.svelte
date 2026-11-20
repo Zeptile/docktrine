@@ -9,22 +9,21 @@
   import { timeAgo, timeUntil, duration, shortImage } from "$lib/format";
   import { confirmAction } from "$lib/confirm";
   import { toast } from "$lib/toast";
+  import { can } from "$lib/session";
   import Button from "./ui/Button.svelte";
-  import Card from "./ui/Card.svelte";
   import Alert from "./ui/Alert.svelte";
   import Loading from "./ui/Loading.svelte";
   import StatusBadge from "./ui/StatusBadge.svelte";
+  import Gauge from "./Gauge.svelte";
   import SecretsPanel from "./SecretsPanel.svelte";
   import LogsPanel from "./LogsPanel.svelte";
   import {
-    ArrowLeft,
     ExternalLink,
     RefreshCw,
     RotateCcw,
     Trash2,
     GitBranch,
     Clock,
-    Server,
   } from "lucide-svelte";
 
   export let app: string;
@@ -159,61 +158,46 @@
     }
   }
 
-  function containerTone(state: string) {
-    if (state === "running") return "text-success";
-    if (state === "exited" || state === "dead") return "text-destructive";
-    return "text-warning";
-  }
-
-  function deploymentTone(d: Deployment) {
-    if (isRunning(d)) return "text-info corrugated-moving";
-    if (d.status === "failed") return "text-destructive";
-    if (d.id === environment?.current_deployment_id) return "text-success";
-    return "text-border";
+  function containerStatus(state: string) {
+    if (state === "running") return "succeeded";
+    if (state === "exited" || state === "dead") return "failed";
+    return "running";
   }
 </script>
 
-<div class="space-y-8">
-  <div class="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
-    <div class="min-w-0">
-      <a
-        href="#/apps"
-        class="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 mb-3"
-      >
-        <ArrowLeft class="w-4 h-4" /> {app}
-      </a>
-      <h1 class="stencil text-5xl break-all flex flex-wrap items-center gap-x-4 gap-y-2">
-        {env}
-        {#if latest && isRunning(latest)}
-          <StatusBadge status={latest.status} class="font-sans tracking-normal" />
-        {/if}
-      </h1>
-      {#if environment}
-        <div class="text-sm text-muted-foreground mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5">
-          <span class="inline-flex items-center gap-1.5">
-            <Server class="w-3.5 h-3.5" /> {environment.server}
-          </span>
-          {#if environment.branch}
-            <span class="inline-flex items-center gap-1.5">
-              <GitBranch class="w-3.5 h-3.5" /> {environment.branch}
-            </span>
-          {/if}
-          {#if environment.expires_at}
-            <span class="inline-flex items-center gap-1.5" title={new Date(environment.expires_at).toLocaleString()}>
-              <Clock class="w-3.5 h-3.5" />
-              {timeUntil(environment.expires_at) === "expired"
-                ? "Expired, removed at the next cleanup"
-                : `Removed in ${timeUntil(environment.expires_at)} unless redeployed`}
-            </span>
-          {/if}
-        </div>
+<header class="riveted px-6 py-6 sm:px-8 flex flex-wrap items-center gap-x-7 gap-y-4">
+  <Gauge status={latest?.status ?? "none"} size={124} sweep class="shrink-0" />
+  <div class="min-w-0 flex-1">
+    <a href="#/apps" class="engraved text-lg text-muted-foreground hover:text-brass">{app} /</a>
+    <h1 class="font-slab font-bold text-[2.5rem] sm:text-[3rem] leading-none mt-0.5 break-all flex flex-wrap items-center gap-x-5 gap-y-2">
+      {env}
+      {#if latest && isRunning(latest)}
+        <StatusBadge status={latest.status} class="font-sans font-normal text-sm" />
       {/if}
-    </div>
+    </h1>
+    {#if environment}
+      <p class="text-sm text-muted-foreground mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5">
+        <span>on <a href="#/servers" class="text-foreground hover:underline">{environment.server}</a></span>
+        {#if environment.branch}
+          <span class="inline-flex items-center gap-1.5"><GitBranch class="w-3.5 h-3.5" /> {environment.branch}</span>
+        {/if}
+        {#if environment.expires_at}
+          <span class="inline-flex items-center gap-1.5" title={new Date(environment.expires_at).toLocaleString()}>
+            <Clock class="w-3.5 h-3.5" />
+            {timeUntil(environment.expires_at) === "expired"
+              ? "Expired, removed at the next cleanup"
+              : `Removed in ${timeUntil(environment.expires_at)} unless redeployed`}
+          </span>
+        {/if}
+      </p>
+    {/if}
+  </div>
 
-    <div class="flex items-center gap-2 shrink-0">
-      <Button variant="outline" size="icon" onclick={load} title="Refresh" aria-label="Refresh">
-        <RefreshCw />
-      </Button>
+  <div class="flex items-center gap-2 shrink-0">
+    <Button variant="ghost" size="icon" onclick={load} title="Refresh" aria-label="Refresh">
+      <RefreshCw />
+    </Button>
+    {#if $can("deployer")}
       <Button
         variant="outline"
         onclick={redeploy}
@@ -222,193 +206,187 @@
       >
         <RotateCcw /> Redeploy
       </Button>
-    </div>
+    {/if}
   </div>
+</header>
 
-  {#if error}
-    <Alert>{error}</Alert>
+{#if error}
+  <Alert class="mt-6">{error}</Alert>
+{/if}
+
+{#if detail}
+  {#if failedSinceCurrent}
+    <Alert kind="warning" class="mt-8">
+      <span class="font-medium">Deploy #{failedSinceCurrent.id} failed {timeAgo(failedSinceCurrent.finished_at ?? failedSinceCurrent.created_at)}{failedSinceCurrent.message ? ":" : "."}</span>
+      {#if failedSinceCurrent.message}{failedSinceCurrent.message}.{/if}
+      {current ? `#${current.id} is still serving.` : "Nothing is running."}
+      {#if selectedId !== failedSinceCurrent.id || activeTab !== "history"}
+        <button class="underline underline-offset-2 font-medium" onclick={() => failedSinceCurrent && select(failedSinceCurrent.id)}>
+          See its log
+        </button>
+      {/if}
+    </Alert>
   {/if}
 
-  {#if detail}
-    {#if failedSinceCurrent}
-      <Alert kind="warning">
-        <span class="font-medium">Deploy #{failedSinceCurrent.id} failed {timeAgo(failedSinceCurrent.finished_at ?? failedSinceCurrent.created_at)}{failedSinceCurrent.message ? ":" : "."}</span>
-        {#if failedSinceCurrent.message}{failedSinceCurrent.message}.{/if}
-        {current ? `#${current.id} is still serving.` : "Nothing is running."}
-        {#if selectedId !== failedSinceCurrent.id || activeTab !== "history"}
-          <button class="underline underline-offset-2 font-medium" onclick={() => failedSinceCurrent && select(failedSinceCurrent.id)}>
-            See its log
-          </button>
-        {/if}
-      </Alert>
-    {/if}
-
-    <Card class="grid md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)] md:divide-x divide-y md:divide-y-0">
-      <section class="p-5 min-w-0">
-        <h2 class="text-xs font-semibold text-muted-foreground mb-2">Running</h2>
+  <dl class="mt-8 grid md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)] riveted px-6 sm:px-8 md:divide-x divide-y md:divide-y-0">
+    <div class="py-4 md:pr-6 min-w-0">
+      <dt class="text-[13px] text-muted-foreground mb-1.5">Running</dt>
+      <dd>
         {#if current}
-          <p class="font-mono text-sm truncate" title={current.image}>{shortImage(current.image)}</p>
+          <p class="font-mono text-[13px] truncate" title={current.image}>{shortImage(current.image)}</p>
           <p class="text-sm text-muted-foreground mt-1">
             #{current.id}, deployed {timeAgo(current.created_at)}{current.created_by ? ` by ${current.created_by}` : ""}
           </p>
         {:else}
           <p class="text-sm text-muted-foreground">Nothing yet.</p>
         {/if}
-      </section>
+      </dd>
+    </div>
 
-      <section class="p-5 min-w-0">
-        <h2 class="text-xs font-semibold text-muted-foreground mb-2">Hostnames</h2>
+    <div class="py-4 md:px-6 min-w-0">
+      <dt class="text-[13px] text-muted-foreground mb-1.5">Hostnames</dt>
+      <dd>
         {#if detail.hostnames.length === 0}
           <p class="text-sm text-muted-foreground">None; not exposed through the gateway.</p>
         {:else}
           <ul class="space-y-1 text-sm">
             {#each detail.hostnames as host}
               <li class="min-w-0">
-                <a
-                  href="https://{host}"
-                  target="_blank"
-                  rel="noreferrer"
-                  class="text-link hover:underline underline-offset-2 inline-flex items-center gap-1.5 max-w-full"
-                >
+                <a href="https://{host}" target="_blank" rel="noreferrer" class="text-link hover:underline underline-offset-2 inline-flex items-center gap-1.5 max-w-full">
                   <span class="truncate">{host}</span> <ExternalLink class="w-3.5 h-3.5 shrink-0" />
                 </a>
               </li>
             {/each}
           </ul>
         {/if}
-      </section>
+      </dd>
+    </div>
 
-      <section class="p-5 min-w-0">
-        <h2 class="text-xs font-semibold text-muted-foreground mb-2">Containers</h2>
+    <div class="py-4 md:pl-6 min-w-0">
+      <dt class="text-[13px] text-muted-foreground mb-1.5">Containers</dt>
+      <dd>
         {#if detail.containers_error}
-          <p class="text-sm text-destructive break-words">
-            Couldn't reach {environment?.server}: {detail.containers_error}
-          </p>
+          <p class="text-sm text-destructive break-words">Couldn't reach {environment?.server}: {detail.containers_error}</p>
         {:else if !detail.containers?.length}
           <p class="text-sm text-muted-foreground">None running.</p>
         {:else}
           <ul class="space-y-1.5 text-sm">
             {#each detail.containers as c (c.id)}
-              <li class="flex items-center gap-2 min-w-0">
-                <span class="w-2 h-2 rounded-full bg-current shrink-0 {containerTone(c.state)}"></span>
-                <span class="font-mono text-[13px] truncate" title={c.image}>{c.service ?? c.name}</span>
+              <li class="flex items-center gap-2.5 min-w-0">
+                <StatusBadge status={containerStatus(c.state)} label={false} />
+                <span class="truncate" title={c.image}>{c.service ?? c.name}</span>
                 <span class="ml-auto text-xs text-muted-foreground shrink-0">{c.status}</span>
               </li>
             {/each}
           </ul>
         {/if}
-      </section>
-    </Card>
-
-    <div>
-      <nav class="border-b flex gap-1 mb-5" aria-label="Environment">
-        {#each tabs as t}
-          <a
-            href={t.id === "history" ? base : `${base}/${t.id}`}
-            aria-current={activeTab === t.id ? "page" : undefined}
-            class="relative px-3 py-2.5 text-sm font-medium transition-colors
-              {activeTab === t.id ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
-          >
-            {t.label}
-            {#if activeTab === t.id}
-              <span class="absolute inset-x-3 -bottom-px h-[3px] rounded-t-sm bg-signal"></span>
-            {/if}
-          </a>
-        {/each}
-      </nav>
-
-      {#if activeTab === "history"}
-        <div class="grid lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-4 items-start">
-          <Card class="overflow-hidden">
-            {#if deployments.length === 0}
-              <p class="p-6 text-sm text-muted-foreground">No deployments yet.</p>
-            {:else}
-              <ul class="divide-y max-h-[36rem] overflow-y-auto">
-                {#each deployments as d (d.id)}
-                  <li>
-                    <button
-                      class="w-full text-left flex items-stretch transition-colors focus-visible:ring-inset focus-visible:ring-offset-0
-                        {selectedId === d.id ? 'bg-muted' : 'hover:bg-muted/60'}"
-                      aria-pressed={selectedId === d.id}
-                      onclick={() => select(d.id)}
-                    >
-                      <span class="corrugated w-1.5 shrink-0 {deploymentTone(d)}" aria-hidden="true"></span>
-                      <span class="flex-1 min-w-0 px-4 py-3 flex items-start gap-3">
-                        <span class="stencil text-2xl w-12 shrink-0 pt-0.5">#{d.id}</span>
-                        <span class="flex-1 min-w-0">
-                          <span class="flex items-center gap-2">
-                            <span class="font-mono text-[13px] truncate" title={d.image}>{shortImage(d.image)}</span>
-                          </span>
-                          <span class="block text-xs text-muted-foreground mt-0.5 truncate">
-                            {timeAgo(d.created_at)}{d.created_by ? ` by ${d.created_by}` : ""}
-                          </span>
-                        </span>
-                        {#if d.id === environment?.current_deployment_id}
-                          <span class="h-5 px-1.5 rounded-sm bg-success text-card text-[11px] font-bold tracking-wide inline-flex items-center">live</span>
-                        {:else if d.status !== "succeeded"}
-                          <StatusBadge status={d.status} />
-                        {/if}
-                      </span>
-                    </button>
-                  </li>
-                {/each}
-              </ul>
-            {/if}
-          </Card>
-
-          <Card class="overflow-hidden flex flex-col min-h-[20rem]">
-            {#if selected}
-              <div class="px-5 py-4 border-b flex flex-wrap items-center justify-between gap-3">
-                <div class="min-w-0">
-                  <div class="font-semibold flex items-center gap-2">
-                    Deployment #{selected.id} <StatusBadge status={selected.status} />
-                  </div>
-                  <div class="text-xs text-muted-foreground mt-1">
-                    {new Date(selected.created_at).toLocaleString()}, {isRunning(selected) ? "running for" : "took"} {duration(selected.created_at, selected.finished_at)}
-                  </div>
-                </div>
-                {#if selected.status === "succeeded" && selected.id !== environment?.current_deployment_id}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={acting || active}
-                    onclick={() => selected && rollbackTo(selected)}
-                  >
-                    <RotateCcw /> Roll back to #{selected.id}
-                  </Button>
-                {/if}
-              </div>
-              {#if selected.message}
-                <div class="px-5 py-2.5 text-sm border-b {selected.status === 'failed' ? 'text-destructive bg-destructive/10' : 'text-muted-foreground'}">
-                  {selected.message}
-                </div>
-              {/if}
-              <pre
-                bind:this={logBox}
-                class="terminal flex-1 p-5 overflow-auto max-h-[32rem] whitespace-pre-wrap break-all">{selected.log || "No output yet."}</pre>
-            {:else if selectedId !== null}
-              <Loading label="Loading the log" />
-            {:else}
-              <div class="p-6 text-sm text-muted-foreground">Select a deployment to see its log.</div>
-            {/if}
-          </Card>
-        </div>
-      {:else if activeTab === "logs"}
-        <LogsPanel {app} {env} />
-      {:else if activeTab === "secrets"}
-        <SecretsPanel {app} {env} required={current?.spec?.secrets ?? []} />
-      {/if}
+      </dd>
     </div>
+  </dl>
 
-    <section class="border-t pt-6">
+  <nav class="mt-10 border-b flex gap-6 mb-6" aria-label="Environment">
+    {#each tabs as t}
+      <a
+        href={t.id === "history" ? base : `${base}/${t.id}`}
+        aria-current={activeTab === t.id ? "page" : undefined}
+        class="relative py-2.5 text-sm font-medium {activeTab === t.id ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
+      >
+        {t.label}
+        {#if activeTab === t.id}
+          <span class="absolute inset-x-0 -bottom-px h-[3px] bg-brass"></span>
+        {/if}
+      </a>
+    {/each}
+  </nav>
+
+  {#if activeTab === "history"}
+    <div class="grid lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-6 items-start">
+      {#if deployments.length === 0}
+        <p class="text-sm text-muted-foreground">No deployments yet.</p>
+      {:else}
+        <!-- A track line through each deployment's light, newest on top -->
+        <ol class="relative max-h-[36rem] overflow-y-auto">
+          {#each deployments as d, i (d.id)}
+            <li class="relative">
+              {#if i < deployments.length - 1}
+                <span class="absolute left-[1.05rem] top-7 -bottom-1 w-px bg-border" aria-hidden="true"></span>
+              {/if}
+              <button
+                class="w-full text-left flex items-start gap-3.5 pl-3 pr-3 py-3 rounded-md focus-visible:ring-inset focus-visible:ring-offset-0
+                  {selectedId === d.id ? 'bg-plate' : 'hover:bg-plate/50'}"
+                aria-pressed={selectedId === d.id}
+                onclick={() => select(d.id)}
+              >
+                <span class="pt-1.5 relative"><StatusBadge status={d.status} label={false} /></span>
+                <span class="flex-1 min-w-0">
+                  <span class="flex items-baseline gap-2.5">
+                    <span class="nixie">{d.id}</span>
+                    <span class="font-mono text-[12.5px] truncate" title={d.image}>{shortImage(d.image)}</span>
+                  </span>
+                  <span class="block text-[13px] text-muted-foreground mt-1 truncate">
+                    {timeAgo(d.created_at)}{d.created_by ? `, ${d.created_by}` : ""}
+                  </span>
+                </span>
+                {#if d.id === environment?.current_deployment_id}
+                  <span class="mt-0.5 text-[12px] font-semibold text-success border border-success/50 rounded-sm px-1.5">live</span>
+                {:else if d.status === "failed"}
+                  <span class="mt-0.5 text-[12px] text-destructive">failed</span>
+                {:else if isRunning(d)}
+                  <span class="mt-0.5 text-[12px] text-warning">{d.status === "pending" ? "queued" : "deploying"}</span>
+                {/if}
+              </button>
+            </li>
+          {/each}
+        </ol>
+      {/if}
+
+      <div class="rounded-lg overflow-hidden flex flex-col min-h-[20rem] terminal">
+        {#if selected}
+          <div class="px-5 py-3.5 border-b border-white/10 flex flex-wrap items-center justify-between gap-3 font-sans">
+            <div class="min-w-0">
+              <div class="text-sm font-semibold flex items-center gap-2.5">
+                Deployment <span class="nixie">{selected.id}</span>
+                <StatusBadge status={selected.status} class="text-[12px] font-normal" />
+              </div>
+              <div class="text-xs opacity-70 mt-1">
+                {new Date(selected.created_at).toLocaleString()}, {isRunning(selected) ? "running for" : "took"} {duration(selected.created_at, selected.finished_at)}
+              </div>
+            </div>
+            {#if $can("deployer") && selected.status === "succeeded" && selected.id !== environment?.current_deployment_id}
+              <Button size="sm" variant="secondary" disabled={acting || active} onclick={() => selected && rollbackTo(selected)}>
+                <RotateCcw /> Roll back to #{selected.id}
+              </Button>
+            {/if}
+          </div>
+          {#if selected.message}
+            <div class="px-5 py-2.5 text-[13px] font-sans border-b border-white/10 {selected.status === 'failed' ? 'text-[rgb(240_114_122)]' : 'opacity-70'}">
+              {selected.message}
+            </div>
+          {/if}
+          <pre bind:this={logBox} class="flex-1 p-5 overflow-auto max-h-[32rem] whitespace-pre-wrap break-all">{selected.log || "No output yet."}</pre>
+        {:else if selectedId !== null}
+          <p class="p-5 opacity-70">Loading the log…</p>
+        {:else}
+          <p class="p-5 opacity-70 font-sans text-sm">Select a deployment to see its log.</p>
+        {/if}
+      </div>
+    </div>
+  {:else if activeTab === "logs"}
+    <LogsPanel {app} {env} />
+  {:else if activeTab === "secrets"}
+    <SecretsPanel {app} {env} required={current?.spec?.secrets ?? []} />
+  {/if}
+
+  {#if $can("deployer")}
+    <section class="mt-16 pt-6 border-t">
       {#if !showDestroy}
         <div class="flex flex-wrap items-center justify-between gap-4">
           <p class="text-sm text-muted-foreground max-w-xl">
             Destroying {env} removes its containers and hostnames and deletes its deployment history.
           </p>
           <Button
-            variant="outline"
-            class="text-destructive hover:text-destructive border-destructive/40 hover:border-destructive hover:bg-destructive/10"
+            variant="ghost"
+            class="text-destructive hover:text-destructive hover:bg-destructive/10"
             onclick={() => (showDestroy = true)}
             disabled={acting || active}
             title={active ? "Wait for the deployment in progress to finish" : undefined}
@@ -417,45 +395,28 @@
           </Button>
         </div>
       {:else}
-        <Card class="flex overflow-hidden border-destructive/50">
-          <span class="corrugated w-2 shrink-0 text-destructive" aria-hidden="true"></span>
-          <div class="p-6 flex-1 min-w-0">
-            <h2 class="font-semibold">Destroy {app}/{env}</h2>
-            <p class="text-sm text-muted-foreground mt-1 mb-5 max-w-2xl">
-              Removes its containers from {environment?.server}, its hostnames from the
-              gateway, and its deployment history. Secrets are kept, so deploying {env}
-              again picks them back up.
-            </p>
-            <label class="flex items-start gap-2.5 text-sm mb-5">
-              <input type="checkbox" bind:checked={destroyPurge} class="w-4 h-4 mt-0.5 accent-[rgb(var(--danger))]" />
-              <span>Also delete its volumes. <span class="text-destructive">The data in them can't be recovered.</span></span>
-            </label>
-            <label for="destroy-confirm" class="label">
-              Type <span class="font-mono">{env}</span> to confirm
-            </label>
-            <div class="flex flex-wrap gap-2">
-              <input
-                id="destroy-confirm"
-                bind:value={destroyConfirm}
-                class="input font-mono flex-1 min-w-48"
-                autocomplete="off"
-              />
-              <Button variant="outline" onclick={() => { showDestroy = false; destroyConfirm = ""; }}>
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                disabled={destroyConfirm !== env || acting}
-                onclick={destroy}
-              >
-                {acting ? "Destroying…" : `Destroy ${env}`}
-              </Button>
-            </div>
+        <div class="border-l-[3px] border-destructive pl-5 py-1">
+          <h2 class="section-title">Destroy <span class="engraved text-lg font-normal">{app}/{env}</span></h2>
+          <p class="text-sm text-muted-foreground mt-1 mb-5 max-w-2xl">
+            Removes its containers from {environment?.server}, its hostnames from the gateway, and its deployment
+            history. Secrets are kept, so deploying {env} again picks them back up.
+          </p>
+          <label class="flex items-start gap-2.5 text-sm mb-5">
+            <input type="checkbox" bind:checked={destroyPurge} class="w-4 h-4 mt-0.5 accent-[rgb(var(--danger))]" />
+            <span>Also delete its volumes. <span class="text-destructive">The data in them can't be recovered.</span></span>
+          </label>
+          <label for="destroy-confirm" class="label">Type <span class="font-mono">{env}</span> to confirm</label>
+          <div class="flex flex-wrap gap-2 max-w-xl">
+            <input id="destroy-confirm" bind:value={destroyConfirm} class="input font-mono flex-1 min-w-48" autocomplete="off" />
+            <Button variant="outline" onclick={() => { showDestroy = false; destroyConfirm = ""; }}>Cancel</Button>
+            <Button variant="destructive" disabled={destroyConfirm !== env || acting} onclick={destroy}>
+              {acting ? "Destroying…" : `Destroy ${env}`}
+            </Button>
           </div>
-        </Card>
+        </div>
       {/if}
     </section>
-  {:else if !error}
-    <Loading label="Loading {app}/{env}" />
   {/if}
-</div>
+{:else if !error}
+  <Loading label="Loading {app}/{env}" />
+{/if}

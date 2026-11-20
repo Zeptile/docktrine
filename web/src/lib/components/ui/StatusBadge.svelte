@@ -3,40 +3,43 @@
 
   interface Props {
     status: string;
+    // Show the word next to the light
+    label?: boolean;
     class?: string;
   }
 
-  let { status, class: className }: Props = $props();
+  let { status, label = true, class: className }: Props = $props();
 
-  const styles: Record<string, string> = {
-    succeeded: "text-success bg-success/10 border-success/30",
-    running: "text-info bg-info/10 border-info/30",
-    pending: "text-info bg-info/10 border-info/30",
-    failed: "text-destructive bg-destructive/10 border-destructive/30",
-    // Container states
-    exited: "text-destructive bg-destructive/10 border-destructive/30",
-    dead: "text-destructive bg-destructive/10 border-destructive/30",
-    restarting: "text-warning bg-warning/10 border-warning/30",
-    paused: "text-warning bg-warning/10 border-warning/30",
+  // Deployment statuses and container states, as navigation lights
+  const lights: Record<string, string> = {
+    succeeded: "light-live",
+    running: "light-deploying",
+    pending: "light-queued",
+    failed: "light-failed",
+    exited: "light-off",
+    dead: "light-failed",
+    restarting: "light-deploying",
+    paused: "light-queued",
   };
 
-  const labels: Record<string, string> = {
+  const words: Record<string, string> = {
+    succeeded: "succeeded",
     running: "deploying",
     pending: "queued",
+  };
+
+  const tones: Record<string, string> = {
+    failed: "text-destructive",
+    dead: "text-destructive",
+    running: "text-warning",
+    pending: "text-warning",
   };
 </script>
 
 <span
-  class={cn(
-    "inline-flex items-center gap-1.5 h-5 px-1.5 rounded-sm border text-[11px] font-semibold tracking-wide whitespace-nowrap",
-    styles[status] ?? "text-muted-foreground bg-muted border-border",
-    className
-  )}
+  class={cn("inline-flex items-center gap-2 text-[13px] whitespace-nowrap", tones[status] ?? "text-muted-foreground", className)}
+  title={label ? undefined : (words[status] ?? status)}
 >
-  <span
-    class="w-1.5 h-1.5 rounded-full bg-current {status === 'running' || status === 'pending'
-      ? 'animate-pulse'
-      : ''}"
-  ></span>
-  {labels[status] ?? status}
+  <span class="light {lights[status] ?? 'light-off'}"></span>
+  {#if label}{words[status] ?? status}{/if}
 </span>

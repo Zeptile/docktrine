@@ -3,32 +3,40 @@
   import EnvironmentDetail from "./lib/components/EnvironmentDetail.svelte";
   import ContainerList from "./lib/components/ContainerList.svelte";
   import ServerList from "./lib/components/ServerList.svelte";
-  import ApiKeys from "./lib/components/ApiKeys.svelte";
+  import Activity from "./lib/components/Activity.svelte";
+  import Users from "./lib/components/Users.svelte";
+  import Account from "./lib/components/Account.svelte";
   import Login from "./lib/components/Login.svelte";
+  import Invite from "./lib/components/Invite.svelte";
+  import GoTo from "./lib/components/GoTo.svelte";
   import Logo from "./lib/components/ui/Logo.svelte";
+  import Pipe from "./lib/components/ui/Pipe.svelte";
   import ConfirmDialog from "./lib/components/ui/ConfirmDialog.svelte";
   import Toaster from "./lib/components/ui/Toaster.svelte";
-  import { auth } from "./lib/api";
+  import { me, can, loadMe, signOut, displayName } from "./lib/session";
   import { theme, type Theme } from "./lib/theme";
   import { onMount } from "svelte";
-  import { Sun, Moon, Monitor, LogOut } from "lucide-svelte";
+  import { Sun, Moon, Monitor, LogOut, Search } from "lucide-svelte";
 
-  // Routes: #/apps, #/apps/<app>/<env>[/<tab>], #/containers, #/servers, #/keys
+  // Routes: #/apps, #/apps/<app>/<env>[/<tab>], #/activity, #/containers,
+  // #/servers, #/users, #/account, #/invite/<token>
   type Route =
-    | { page: "apps" }
+    | { page: "apps" | "activity" | "containers" | "servers" | "users" | "account" }
     | { page: "environment"; app: string; env: string; tab?: string }
-    | { page: "containers" }
-    | { page: "servers" }
-    | { page: "keys" };
+    | { page: "invite"; token: string };
 
-  let route: Route = parse(location.hash);
-  let authenticated = !!auth.getKey();
+  const simplePages = ["apps", "activity", "containers", "servers", "users", "account"] as const;
 
-  const tabs = [
+  let route = $state<Route>(parse(location.hash));
+  // Unknown until the first /me answers, so the sign-in page doesn't flash
+  let checked = $state(false);
+  let goTo = $state(false);
+
+  const nav = [
     { id: "apps", label: "Apps" },
+    { id: "activity", label: "Activity" },
     { id: "containers", label: "Containers" },
     { id: "servers", label: "Servers" },
-    { id: "keys", label: "API keys" },
   ];
 
   const themes: { id: Theme; label: string }[] = [
@@ -37,21 +45,32 @@
     { id: "dark", label: "Dark theme" },
   ];
 
-  $: activeTab = route.page === "environment" ? "apps" : route.page;
-  $: document.title =
-    route.page === "environment"
-      ? `${route.app}/${route.env} · Docktrine`
-      : `${tabs.find((t) => t.id === route.page)?.label} · Docktrine`;
+  const titles: Record<string, string> = {
+    apps: "Apps",
+    activity: "Activity",
+    containers: "Containers",
+    servers: "Servers",
+    users: "Users",
+    account: "Account",
+    invite: "Welcome aboard",
+  };
+
+  let active = $derived(route.page === "environment" ? "apps" : route.page);
+  let themeLabel = $derived(themes.find((t) => t.id === $theme)?.label);
+
+  $effect(() => {
+    document.title =
+      route.page === "environment" ? `${route.app}/${route.env} · Docktrine` : `${titles[route.page]} · Docktrine`;
+  });
 
   function parse(hash: string): Route {
     const parts = hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
     if (parts[0] === "apps" && parts.length >= 3) {
       return { page: "environment", app: parts[1], env: parts[2], tab: parts[3] };
     }
-    if (parts[0] === "containers" || parts[0] === "servers" || parts[0] === "keys") {
-      return { page: parts[0] };
-    }
-    return { page: "apps" };
+    if (parts[0] === "invite" && parts[1]) return { page: "invite", token: parts[1] };
+    const page = simplePages.find((p) => p === parts[0]);
+    return { page: page ?? "apps" };
   }
 
   function cycleTheme() {
@@ -59,58 +78,72 @@
     theme.set(themes[(i + 1) % themes.length].id);
   }
 
+  function initials(name: string) {
+    const words = name.trim().split(/[\s._-]+/).filter(Boolean);
+    return ((words[0]?.[0] ?? "?") + (words[1]?.[0] ?? "")).toUpperCase();
+  }
+
   onMount(() => {
-    const onUnauthorized = () => (authenticated = false);
+    loadMe().finally(() => (checked = true));
+    const onUnauthorized = () => me.set(null);
     const onHashChange = () => (route = parse(location.hash));
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && $me) {
+        e.preventDefault();
+        goTo = !goTo;
+      }
+    };
     window.addEventListener("docktrine:unauthorized", onUnauthorized);
     window.addEventListener("hashchange", onHashChange);
+    window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("docktrine:unauthorized", onUnauthorized);
       window.removeEventListener("hashchange", onHashChange);
+      window.removeEventListener("keydown", onKey);
     };
   });
-
-  function logout() {
-    auth.clearKey();
-    authenticated = false;
-  }
 </script>
 
-{#if !authenticated}
-  <Login onLogin={() => (authenticated = true)} />
+{#if route.page === "invite"}
+  <Invite token={route.token} />
+{:else if !checked}
+  <!-- Waiting for the first /me -->
+{:else if !$me}
+  <Login />
 {:else}
-  <header class="bg-yard text-yard-foreground">
-    <div class="max-w-6xl mx-auto px-4 sm:px-6 flex flex-wrap items-center gap-x-6">
-      <a href="#/apps" class="flex items-center gap-2.5 h-14 shrink-0" aria-label="Docktrine home">
-        <Logo class="w-7 h-7" />
-        <span class="stencil text-2xl tracking-[0.08em]">DOCKTRINE</span>
+  <header class="bg-iron text-iron-foreground">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 flex flex-wrap items-center gap-x-6">
+      <a href="#/apps" class="flex items-center gap-2.5 h-16 shrink-0" aria-label="Docktrine home">
+        <Logo class="w-9 h-9" />
+        <span class="font-slab text-2xl font-bold tracking-[0.01em]">Docktrine</span>
       </a>
 
       <nav
-        class="order-last sm:order-none w-full sm:w-auto flex gap-1 -mx-2 sm:mx-0 overflow-x-auto"
+        class="order-last md:order-none basis-full md:basis-auto flex gap-1 -mx-1 overflow-x-auto pb-3 md:pb-0"
         aria-label="Main"
       >
-        {#each tabs as tab}
-          <a
-            href="#/{tab.id}"
-            aria-current={activeTab === tab.id ? "page" : undefined}
-            class="relative px-3 h-11 sm:h-14 flex items-center text-sm font-medium whitespace-nowrap transition-colors
-              {activeTab === tab.id ? 'text-yard-foreground' : 'text-yard-muted hover:text-yard-foreground'}"
-          >
-            {tab.label}
-            {#if activeTab === tab.id}
-              <span class="absolute inset-x-3 bottom-0 h-[3px] rounded-t-sm bg-signal"></span>
-            {/if}
-          </a>
+        {#each nav as item}
+          {@render navLink(item.id, item.label)}
         {/each}
+        {#if $can("admin")}
+          {@render navLink("users", "Users")}
+        {/if}
       </nav>
 
       <div class="ml-auto flex items-center gap-1">
         <button
-          class="h-9 w-9 grid place-items-center rounded-md text-yard-muted hover:text-yard-foreground hover:bg-white/10 transition-colors"
+          class="h-9 px-2.5 flex items-center gap-2 rounded-md text-sm text-iron-muted hover:text-iron-foreground hover:bg-white/10"
+          onclick={() => (goTo = true)}
+          aria-label="Go to an app or page"
+        >
+          <Search class="w-4 h-4" />
+          <kbd class="hidden lg:inline font-sans text-xs border border-white/20 rounded px-1">⌘K</kbd>
+        </button>
+        <button
+          class="h-9 w-9 grid place-items-center rounded-md text-iron-muted hover:text-iron-foreground hover:bg-white/10"
           onclick={cycleTheme}
-          title={themes.find((t) => t.id === $theme)?.label}
-          aria-label="{themes.find((t) => t.id === $theme)?.label}, click to change"
+          title={themeLabel}
+          aria-label="{themeLabel}, click to change"
         >
           {#if $theme === "light"}
             <Sun class="w-4 h-4" />
@@ -120,33 +153,74 @@
             <Monitor class="w-4 h-4" />
           {/if}
         </button>
+        <a
+          href="#/account"
+          class="flex items-center gap-2 h-10 pl-1 pr-2.5 rounded-full hover:bg-white/10
+            {active === 'account' ? 'bg-white/10' : ''}"
+          title="Your account"
+        >
+          <span class="w-8 h-8 rounded-full brass-fill grid place-items-center text-xs font-bold">
+            {initials(displayName($me))}
+          </span>
+          <span class="hidden sm:block text-sm leading-tight">
+            {displayName($me)}
+            <span class="block text-[11px] text-iron-muted">{$me.role}{$me.via === "key" ? ", API key" : ""}</span>
+          </span>
+        </a>
         <button
-          class="h-9 px-2.5 flex items-center gap-2 rounded-md text-sm text-yard-muted hover:text-yard-foreground hover:bg-white/10 transition-colors"
-          onclick={logout}
+          class="h-9 w-9 grid place-items-center rounded-md text-iron-muted hover:text-iron-foreground hover:bg-white/10"
+          onclick={signOut}
+          title="Sign out"
+          aria-label="Sign out"
         >
           <LogOut class="w-4 h-4" />
-          <span class="hidden md:inline">Sign out</span>
         </button>
       </div>
     </div>
   </header>
+  <Pipe />
 
-  <main class="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-8 lg:py-10">
+    {#if $me.via === "key" && !$me.user}
+      <p class="mb-8 text-sm text-muted-foreground border-l-[3px] border-brass pl-3">
+        You're signed in with the API key {$me.key_name}.
+        {#if route.page !== "users"}<a href="#/users" class="text-link hover:underline">Invite yourself</a>{:else}Invite yourself below{/if}
+        to sign in with a password instead.
+      </p>
+    {/if}
+
     {#if route.page === "apps"}
       <AppList />
     {:else if route.page === "environment"}
       {#key `${route.app}/${route.env}`}
         <EnvironmentDetail app={route.app} env={route.env} tab={route.tab} />
       {/key}
+    {:else if route.page === "activity"}
+      <Activity />
     {:else if route.page === "containers"}
       <ContainerList />
     {:else if route.page === "servers"}
       <ServerList />
-    {:else if route.page === "keys"}
-      <ApiKeys />
+    {:else if route.page === "users"}
+      <Users />
+    {:else if route.page === "account"}
+      <Account />
     {/if}
   </main>
+
+  <GoTo bind:open={goTo} />
 {/if}
+
+{#snippet navLink(id: string, label: string)}
+  <a
+    href="#/{id}"
+    aria-current={active === id ? "page" : undefined}
+    class="h-9 px-3 flex items-center rounded-md text-sm whitespace-nowrap
+      {active === id ? 'brass-fill font-semibold' : 'text-iron-muted hover:text-iron-foreground hover:bg-white/10'}"
+  >
+    {label}
+  </a>
+{/snippet}
 
 <ConfirmDialog />
 <Toaster />

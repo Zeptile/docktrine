@@ -4,8 +4,8 @@
   import { bytes } from "$lib/format";
   import { confirmAction } from "$lib/confirm";
   import { toast } from "$lib/toast";
+  import { can } from "$lib/session";
   import Button from "./ui/Button.svelte";
-  import Card from "./ui/Card.svelte";
   import Alert from "./ui/Alert.svelte";
   import Loading from "./ui/Loading.svelte";
   import { Plus, Trash2, Activity, Network, Eraser, Pencil, RefreshCw } from "lucide-svelte";
@@ -166,22 +166,27 @@
   }
 
   function healthTone(h: ServerHealth | "loading" | undefined) {
-    if (!h || h === "loading") return "text-muted-foreground animate-pulse";
+    if (!h || h === "loading") return "text-muted-foreground";
     return h.reachable ? "text-success" : "text-destructive";
+  }
+
+  function healthLight(h: ServerHealth | "loading" | undefined) {
+    if (!h || h === "loading") return "light-deploying";
+    return h.reachable ? "light-live" : "light-failed";
   }
 </script>
 
 <div class="space-y-8">
   <div class="flex flex-wrap items-end justify-between gap-4">
     <div>
-      <h1 class="stencil text-5xl">Servers</h1>
-      <p class="text-muted-foreground mt-2">The nodes apps deploy to, reached over SSH.</p>
+      <h1 class="page-title">Servers</h1>
+      <p class="text-muted-foreground mt-1.5">The nodes apps deploy to, reached over SSH.</p>
     </div>
     <div class="flex items-center gap-2">
-      <Button variant="outline" size="icon" onclick={loadServers} disabled={loading} title="Refresh" aria-label="Refresh">
+      <Button variant="ghost" size="icon" onclick={loadServers} disabled={loading} title="Refresh" aria-label="Refresh">
         <RefreshCw class={loading ? "animate-spin" : ""} />
       </Button>
-      {#if !showCreateForm}
+      {#if !showCreateForm && $can("admin")}
         <Button onclick={() => (showCreateForm = true)}>
           <Plus /> Add server
         </Button>
@@ -194,8 +199,7 @@
   {/if}
 
   {#if showCreateForm}
-    <Card class="flex overflow-hidden">
-      <span class="corrugated w-2 shrink-0 text-signal" aria-hidden="true"></span>
+    <div class="rounded-lg bg-plate/70">
       <form
         onsubmit={(e) => {
           e.preventDefault();
@@ -247,30 +251,29 @@
           <Button type="submit">Add server</Button>
         </div>
       </form>
-    </Card>
+    </div>
   {/if}
 
   {#if !loaded && loading}
     <Loading label="Loading servers" />
   {:else if loaded && servers.length === 0 && !showCreateForm}
-    <Card class="p-10 text-center">
-      <h2 class="text-lg font-semibold">No servers yet</h2>
-      <p class="text-muted-foreground mt-2 mb-6">Add the first node apps will deploy to.</p>
-      <Button onclick={() => (showCreateForm = true)}><Plus /> Add server</Button>
-    </Card>
+    <div>
+      <p class="text-muted-foreground mb-4">No servers yet. Add the first node apps will deploy to.</p>
+      {#if $can("admin")}<Button onclick={() => (showCreateForm = true)}><Plus /> Add server</Button>{/if}
+    </div>
   {:else}
-    <div class="space-y-5">
+    <div class="space-y-6">
       {#each servers as server (server.id)}
         {@const h = health[server.name]}
-        <Card class="overflow-hidden">
-          <div class="p-5 sm:p-6">
+        <section class="riveted px-6 sm:px-8 pb-6">
+          <div class="pt-5">
             <div class="flex flex-wrap items-start justify-between gap-4">
               <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <span class="w-2.5 h-2.5 rounded-full bg-current {healthTone(h)}"></span>
-                  <h2 class="stencil text-3xl">{server.name}</h2>
+                  <span class="light {healthLight(h)}"></span>
+                  <h2 class="engraved text-[1.4rem] leading-none">{server.name}</h2>
                   {#if server.is_default}
-                    <span class="text-xs px-1.5 h-5 inline-flex items-center rounded-sm bg-muted text-muted-foreground">default</span>
+                    <span class="text-xs px-1.5 h-5 inline-flex items-center rounded-sm border text-muted-foreground" title="Used when docktrine.yaml doesn't name a node">default</span>
                   {/if}
                   <span class="text-sm {healthTone(h)}">
                     {#if h === "loading" || !h}checking…{:else if h.reachable}online{:else}unreachable{/if}
@@ -285,6 +288,7 @@
                 <Button size="sm" variant="ghost" onclick={() => checkHealth(server.name)} title="Check again" aria-label="Check {server.name} again">
                   <Activity />
                 </Button>
+                {#if $can("admin")}
                 <Button size="sm" variant={panel[server.name] === "edit" ? "secondary" : "outline"} onclick={() => toggle(server, "edit")} aria-expanded={panel[server.name] === "edit"}>
                   <Pencil /> Edit
                 </Button>
@@ -294,16 +298,17 @@
                 <Button size="sm" variant={panel[server.name] === "prune" ? "secondary" : "outline"} onclick={() => toggle(server, "prune")} aria-expanded={panel[server.name] === "prune"}>
                   <Eraser /> Prune
                 </Button>
+                {/if}
               </div>
             </div>
 
             <dl class="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4 text-sm">
               <div class="min-w-0 sm:col-span-2">
-                <dt class="text-xs text-muted-foreground">Docker host</dt>
+                <dt class="text-[13px] text-muted-foreground">Docker host</dt>
                 <dd class="font-mono text-[13px] truncate mt-0.5" title={server.host}>{server.host}</dd>
               </div>
               <div class="min-w-0 sm:col-span-2">
-                <dt class="text-xs text-muted-foreground">Ingress</dt>
+                <dt class="text-[13px] text-muted-foreground">Ingress</dt>
                 <dd class="mt-0.5">
                   {#if h && h !== "loading" && h.reachable}
                     <span class={h.ingress === "running" ? "text-success" : "text-warning"}>{h.ingress === "running" ? "Running" : h.ingress}</span>,
@@ -317,24 +322,24 @@
               </div>
               {#if h && h !== "loading" && h.reachable}
                 <div>
-                  <dt class="text-xs text-muted-foreground">Docker</dt>
+                  <dt class="text-[13px] text-muted-foreground">Docker</dt>
                   <dd class="mt-0.5">{h.server_version} on {h.os}</dd>
                 </div>
                 <div>
-                  <dt class="text-xs text-muted-foreground">Capacity</dt>
+                  <dt class="text-[13px] text-muted-foreground">Capacity</dt>
                   <dd class="mt-0.5">{h.cpus} CPUs, {bytes(h.memory_bytes)}</dd>
                 </div>
                 <div>
-                  <dt class="text-xs text-muted-foreground">Containers</dt>
+                  <dt class="text-[13px] text-muted-foreground">Containers</dt>
                   <dd class="mt-0.5">{h.containers_running} running of {h.containers}</dd>
                 </div>
                 <div>
-                  <dt class="text-xs text-muted-foreground">Images</dt>
+                  <dt class="text-[13px] text-muted-foreground">Images</dt>
                   <dd class="mt-0.5">{h.images}</dd>
                 </div>
               {:else if h && h !== "loading"}
                 <div class="sm:col-span-2 lg:col-span-4">
-                  <dt class="text-xs text-muted-foreground">Error</dt>
+                  <dt class="text-[13px] text-muted-foreground">Error</dt>
                   <dd class="mt-0.5 text-destructive break-words">{h.error}</dd>
                 </div>
               {/if}
@@ -343,7 +348,7 @@
 
           {#if panel[server.name] === "edit" && edits[server.name]}
             <form
-              class="border-t bg-muted/40 p-5 sm:p-6 grid sm:grid-cols-2 gap-4"
+              class="mt-5 rounded-lg bg-plate/70 p-5 sm:p-6 grid sm:grid-cols-2 gap-4"
               onsubmit={(e) => {
                 e.preventDefault();
                 saveEdit(server.name);
@@ -385,7 +390,7 @@
             </form>
           {:else if panel[server.name] === "ingress" && ingress[server.name]}
             <form
-              class="border-t bg-muted/40 p-5 sm:p-6 space-y-4"
+              class="mt-5 rounded-lg bg-plate/70 p-5 sm:p-6 space-y-4"
               onsubmit={(e) => {
                 e.preventDefault();
                 installIngress(server.name);
@@ -415,7 +420,7 @@
               </div>
             </form>
           {:else if panel[server.name] === "prune"}
-            <div class="border-t bg-muted/40 p-5 sm:p-6 space-y-4">
+            <div class="mt-5 rounded-lg bg-plate/70 p-5 sm:p-6 space-y-4">
               <p class="text-sm text-muted-foreground max-w-2xl">
                 Removes dangling images: old layers that no tag points to anymore, left behind by
                 deploys.
@@ -441,7 +446,7 @@
               </div>
             </div>
           {/if}
-        </Card>
+        </section>
       {/each}
     </div>
   {/if}

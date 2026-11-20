@@ -1,6 +1,8 @@
 const API_BASE = "/api";
 const API_KEY_STORAGE = "docktrine.apiKey";
 
+// People sign in with a password (a session cookie). Signing in with an API
+// key, kept in localStorage, remains for the first admin and for recovery.
 export const auth = {
   getKey(): string | null {
     try {
@@ -42,6 +44,7 @@ export interface Container {
     StartedAt: string;
     FinishedAt: string;
     ExitCode: number;
+    OOMKilled?: boolean;
     Health?: { Status: string };
   };
   ports: Array<{
@@ -51,6 +54,7 @@ export interface Container {
     IP?: string;
   }> | null;
   labels: Record<string, string> | null;
+  restarts?: number;
 }
 
 export interface Server {
@@ -131,6 +135,8 @@ export interface Deployment {
 
 export interface AppSummary {
   environment: Environment;
+  // The last dozen deployments, oldest first
+  history: { id: number; status: DeploymentStatus; created_at: string }[];
   latest_deployment?: Deployment;
   current_deployment?: Deployment;
 }
@@ -164,8 +170,33 @@ export interface ApiKeyInfo {
   prefix: string;
   created_at: string;
   last_used_at?: string | null;
+  // Keys without an owner act as admin
+  user_id: number | null;
+  owner: string;
   // The key this browser is signed in with
   current: boolean;
+}
+
+export type Role = "viewer" | "deployer" | "admin";
+
+export interface User {
+  id: number;
+  username: string;
+  display_name: string;
+  role: Role;
+  created_at: string;
+  last_seen_at?: string | null;
+  // Hasn't chosen a password yet
+  invited: boolean;
+  invite_expires_at?: string;
+}
+
+export interface Me {
+  // Null when signed in with a key that has no owner
+  user: User | null;
+  role: Role;
+  via: "session" | "key";
+  key_name?: string;
 }
 
 export interface CreateContainerRequest {
@@ -202,12 +233,12 @@ async function request<T>(
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...(memoryKey ? { "X-API-Key": memoryKey } : {}),
+      ...headers(),
       ...options.headers,
     },
   });
 
-  if (response.status === 401) {
+  if (response.status === 401 && !endpoint.startsWith("/auth/")) {
     auth.clearKey();
     window.dispatchEvent(new Event("docktrine:unauthorized"));
   }
@@ -219,10 +250,51 @@ async function request<T>(
     throw new ApiError(response.status, error.error || response.statusText);
   }
 
+  if (response.status === 204) return undefined as T;
   return response.json();
 }
 
+function headers(): Record<string, string> {
+  // The API refuses cookie-authenticated writes without this header (CSRF)
+  const h: Record<string, string> = { "X-Docktrine-Client": "web" };
+  if (memoryKey) h["X-API-Key"] = memoryKey;
+  return h;
+}
+
+const json = (method: string, body?: unknown): RequestInit => ({
+  method,
+  body: body === undefined ? undefined : JSON.stringify(body),
+});
+
 export const api = {
+  auth: {
+    status: (): Promise<{ has_users: boolean }> => request("/auth/status"),
+    login: (username: string, password: string): Promise<User> =>
+      request("/auth/login", json("POST", { username, password })),
+    logout: (): Promise<void> => request("/auth/logout", json("POST")),
+    invite: (token: string): Promise<User> => request(`/auth/invite/${enc(token)}`),
+    acceptInvite: (token: string, password: string): Promise<User> =>
+      request(`/auth/invite/${enc(token)}`, json("POST", { password })),
+  },
+
+  me: {
+    get: (): Promise<Me> => request("/me"),
+    update: (display_name: string): Promise<User> => request("/me", json("PATCH", { display_name })),
+    changePassword: (current: string, next: string): Promise<void> =>
+      request("/me/password", json("PUT", { current, new: next })),
+  },
+
+  users: {
+    list: (): Promise<User[]> => request("/users"),
+    // The token goes in the invite link: /#/invite/<token>
+    create: (u: { username: string; display_name: string; role: Role }): Promise<User & { invite_token: string }> =>
+      request("/users", json("POST", u)),
+    update: (id: number, u: { display_name: string; role: Role }): Promise<User> =>
+      request(`/users/${id}`, json("PATCH", u)),
+    reset: (id: number): Promise<User & { invite_token: string }> => request(`/users/${id}/reset`, json("POST")),
+    remove: (id: number): Promise<void> => request(`/users/${id}`, json("DELETE")),
+  },
+
   // Container operations
   containers: {
     list: (server?: string): Promise<Container[]> => {
@@ -379,10 +451,7 @@ export const api = {
       if (opts.follow) params.set("follow", "true");
       const response = await fetch(
         `${API_BASE}/apps/${enc(app)}/${enc(env)}/logs?${params}`,
-        {
-          headers: memoryKey ? { "X-API-Key": memoryKey } : {},
-          signal: opts.signal,
-        }
+        { headers: headers(), signal: opts.signal }
       );
       if (!response.ok || !response.body) {
         throw new ApiError(response.status, response.statusText);
@@ -412,6 +481,8 @@ export const api = {
   },
 
   deployments: {
+    list: (limit = 100): Promise<Deployment[]> => request(`/deployments?limit=${limit}`),
+
     get: (id: number): Promise<Deployment> => request(`/deployments/${id}`),
 
     // Redeploys a stored spec as-is: same image, no build

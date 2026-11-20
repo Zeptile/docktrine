@@ -4,8 +4,8 @@
   import { timeAgo } from "$lib/format";
   import { confirmAction } from "$lib/confirm";
   import { toast } from "$lib/toast";
+  import { can } from "$lib/session";
   import Button from "./ui/Button.svelte";
-  import Card from "./ui/Card.svelte";
   import Alert from "./ui/Alert.svelte";
   import { KeyRound, Plus, Trash2, Eye, EyeOff } from "lucide-svelte";
 
@@ -76,7 +76,7 @@
   }
 </script>
 
-<div class="space-y-4">
+<div class="space-y-5 max-w-3xl">
   {#if error}
     <Alert>{error}</Alert>
   {/if}
@@ -87,14 +87,15 @@
           type="button"
           class="font-mono underline decoration-dotted underline-offset-2"
           title="Set {name}"
-          onclick={() => (key = name)}>{name}</button
+          onclick={() => $can("deployer") && (key = name)}>{name}</button
         >{i < missing.length - 1 ? ", " : ""}{/each},
       which {missing.length === 1 ? "isn't" : "aren't"} set. The next deploy fails until
       {missing.length === 1 ? "it is" : "they are"}.
     </Alert>
   {/if}
 
-  <Card class="p-5">
+  {#if $can("deployer")}
+  <div class="rounded-lg bg-plate/70 p-5">
     <form
       class="flex flex-wrap items-end gap-3"
       onsubmit={(e) => {
@@ -148,20 +149,20 @@
     <p class="hint mt-3">
       Values are encrypted on the server and can't be viewed again. Changes apply on the next deploy.
     </p>
-  </Card>
+  </div>
+  {/if}
 
-  <Card class="overflow-hidden">
+  <div>
     {#if loading && secrets.length === 0}
       <p class="p-6 text-sm text-muted-foreground">Loading…</p>
     {:else if secrets.length === 0}
-      <div class="p-10 text-center text-sm text-muted-foreground">
-        <KeyRound class="w-7 h-7 mx-auto mb-3 opacity-60" />
-        No secrets set for {app}/{env}.
-      </div>
+      <p class="py-6 text-sm text-muted-foreground flex items-center gap-2.5">
+        <KeyRound class="w-4 h-4 opacity-70" /> No secrets set for {app}/{env}.
+      </p>
     {:else}
-      <ul class="divide-y">
+      <ul class="border-t">
         {#each secrets as s (s.key)}
-          <li class="px-5 py-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+          <li class="border-b px-1 py-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
             <div class="min-w-0">
               <span class="font-mono text-sm break-all">{s.key}</span>
               {#if unused.includes(s)}
@@ -170,13 +171,15 @@
             </div>
             <div class="flex items-center gap-3">
               <span class="text-xs text-muted-foreground">updated {timeAgo(s.updated_at)}</span>
-              <Button size="sm" variant="ghost" onclick={() => remove(s.key)} title="Delete {s.key}" aria-label="Delete {s.key}">
-                <Trash2 />
-              </Button>
+              {#if $can("deployer")}
+                <Button size="sm" variant="ghost" onclick={() => remove(s.key)} title="Delete {s.key}" aria-label="Delete {s.key}">
+                  <Trash2 />
+                </Button>
+              {/if}
             </div>
           </li>
         {/each}
       </ul>
     {/if}
-  </Card>
+  </div>
 </div>

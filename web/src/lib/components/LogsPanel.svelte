@@ -2,7 +2,6 @@
   import { onMount, onDestroy, tick } from "svelte";
   import { api, ApiError } from "$lib/api";
   import Button from "./ui/Button.svelte";
-  import Card from "./ui/Card.svelte";
   import { Pause, Play, ArrowDownToLine } from "lucide-svelte";
 
   export let app: string;
@@ -72,12 +71,12 @@
   }
 </script>
 
-<Card class="overflow-hidden flex flex-col">
-  <div class="px-4 py-2.5 border-b flex flex-wrap items-center justify-between gap-3">
+<div class="rounded-lg overflow-hidden flex flex-col terminal">
+  <div class="font-sans px-4 py-2.5 border-b border-white/10 flex flex-wrap items-center justify-between gap-3">
     <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
       <label class="flex items-center gap-2">
         Last
-        <select bind:value={tail} onchange={start} class="input h-8 w-auto py-0">
+        <select bind:value={tail} onchange={start} class="h-8 rounded-md bg-white/10 border border-white/15 px-2 text-[13px]">
           <option value={100}>100</option>
           <option value={200}>200</option>
           <option value={1000}>1,000</option>
@@ -86,40 +85,40 @@
         lines
       </label>
       <label class="flex items-center gap-2">
-        <input type="checkbox" bind:checked={follow} onchange={start} class="w-4 h-4 accent-[rgb(var(--signal))]" />
+        <input type="checkbox" bind:checked={follow} onchange={start} class="w-4 h-4 accent-[rgb(var(--brass))]" />
         Follow new output
       </label>
       {#if streaming && follow}
-        <span class="inline-flex items-center gap-1.5 text-success font-medium">
-          <span class="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span> Live
+        <span class="inline-flex items-center gap-2 text-[rgb(78_198_140)] font-medium">
+          <span class="light light-live"></span> Live
         </span>
       {/if}
     </div>
     {#if streaming}
-      <Button size="sm" variant="outline" onclick={stop}>
+      <Button size="sm" variant="secondary" onclick={stop}>
         <Pause /> Pause
       </Button>
     {:else}
-      <Button size="sm" variant="outline" onclick={start}>
+      <Button size="sm" variant="secondary" onclick={start}>
         <Play /> {follow ? "Resume" : "Reload"}
       </Button>
     {/if}
   </div>
   {#if error}
-    <div class="px-4 py-2.5 text-sm text-destructive bg-destructive/10 border-b">{error}</div>
+    <div class="font-sans px-4 py-2.5 text-sm text-[rgb(240_114_122)] border-b border-white/10">{error}</div>
   {/if}
   <div class="relative">
     <pre
       bind:this={box}
       onscroll={onScroll}
-      class="terminal p-5 overflow-auto h-[34rem] whitespace-pre-wrap break-all">{text || (streaming ? "Waiting for output…" : "No output.")}</pre>
+      class="p-5 overflow-auto h-[34rem] whitespace-pre-wrap break-all">{text || (streaming ? "Waiting for output…" : "No output.")}</pre>
     {#if !pinned}
       <button
-        class="absolute bottom-4 right-6 h-8 px-3 rounded-md bg-signal text-signal-ink text-xs font-semibold shadow-lg inline-flex items-center gap-1.5"
+        class="font-sans absolute bottom-4 right-6 h-8 px-3 rounded-md bg-brass text-brass-ink text-xs font-semibold shadow-lg inline-flex items-center gap-1.5"
         onclick={jumpToEnd}
       >
         <ArrowDownToLine class="w-3.5 h-3.5" /> Jump to latest
       </button>
     {/if}
   </div>
-</Card>
+</div>
