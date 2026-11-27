@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { newRow, needsValue, parseDotenv, looksSecret, isEnvKey, type VarRow } from "$lib/launch";
+  import { newRow, needsValue, isRequired, parseDotenv, looksSecret, isEnvKey, type VarRow } from "$lib/launch";
   import Button from "../ui/Button.svelte";
   import { Lock, LockOpen, Plus, X, ChevronRight, ClipboardPaste } from "lucide-svelte";
 
@@ -71,7 +71,8 @@
 
   function placeholder(row: VarRow): string {
     if (row.stored) return "Stored; leave blank to keep it";
-    if (row.stack?.required) return "Required";
+    if (isRequired(row)) return row.preset?.generate ? "Required; generate one" : "Required";
+    if (row.preset?.from_hostname && !row.stack?.has_default) return "From the first hostname";
     if (row.stack?.has_default) return row.stack.default ? `Default: ${row.stack.default}` : "Empty by default";
     if (row.stack) return "Not set";
     return "Value";
@@ -85,7 +86,15 @@
       {#if row.stack}
         <span class="font-mono text-[13px] break-all flex items-center gap-2" title={row.key}>
           {row.key}
-          {#if row.stack.required}
+          {#if isRequired(row)}
+            <span class="font-sans text-[11px] uppercase tracking-wider text-warning">required</span>
+          {/if}
+        </span>
+      {:else if row.preset}
+        <!-- Named by the catalog, so it can be removed but not renamed -->
+        <span class="font-mono text-[13px] break-all flex items-center gap-2" title={row.key}>
+          {row.key}
+          {#if isRequired(row)}
             <span class="font-sans text-[11px] uppercase tracking-wider text-warning">required</span>
           {/if}
         </span>
@@ -144,8 +153,8 @@
       <p class="hint text-destructive">Letters, digits and underscores, not starting with a digit.</p>
     {:else if duplicate.has(row.key)}
       <p class="hint text-destructive">{row.key} is set twice.</p>
-    {:else if row.stack?.description}
-      <p class="hint mt-1">{row.stack.description}</p>
+    {:else if row.preset?.description || row.stack?.description}
+      <p class="hint mt-1">{row.preset?.description || row.stack?.description}</p>
     {/if}
   </li>
 {/snippet}

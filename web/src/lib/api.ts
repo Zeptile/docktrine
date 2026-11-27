@@ -253,6 +253,45 @@ export interface ImageInfo {
   port?: number;
 }
 
+// A random value for a secret variable: alnum and hex count characters,
+// base64 counts random bytes, as the secret generator takes them
+export interface GenerateFormat {
+  kind: "alnum" | "hex" | "base64";
+  length: number;
+}
+
+export interface PresetVariable {
+  name: string;
+  value?: string;
+  description?: string;
+  required?: boolean;
+  secret?: boolean;
+  generate?: GenerateFormat;
+  // Filled from the first hostname, e.g. "https://{hostname}"
+  from_hostname?: string;
+}
+
+// A known app from the catalog, which fills the launch form
+export interface Preset {
+  id: string;
+  name: string;
+  description: string;
+  homepage: string;
+  kind: "image" | "git" | "compose";
+  version: string;
+  image?: string;
+  source?: { repo: string; ref: string; path?: string };
+  compose?: string;
+  expose?: { service: string; port: number };
+  port?: number;
+  volumes?: string[];
+  healthcheck?: string;
+  setup?: string;
+  variables?: PresetVariable[];
+  requirements?: Requirements;
+  notes?: string[];
+}
+
 export interface SecretInfo {
   key: string;
   updated_at: string;
@@ -571,6 +610,8 @@ export const api = {
     // Whether the server can run it: resources, ports, ingress
     preflight: (body: PreflightRequest, signal?: AbortSignal): Promise<{ checks: Check[] }> =>
       request("/launch/preflight", { ...json("POST", body), signal }),
+    // Known apps, to start the form from
+    catalog: (): Promise<Preset[]> => request("/catalog"),
   },
 
   keys: {

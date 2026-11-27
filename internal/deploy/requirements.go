@@ -14,26 +14,26 @@ import (
 // its install script's minimums and its compose file's reservations.
 type Requirements struct {
 	// Where the minimums come from, e.g. install/_min-requirements.sh
-	Source string `json:"source,omitempty"`
+	Source string `json:"source,omitempty" yaml:"source,omitempty"`
 	// The first variant whose condition holds applies; the last has none
-	Variants      []RequirementVariant `json:"variants,omitempty"`
-	DockerVersion string               `json:"docker_version,omitempty"`
+	Variants      []RequirementVariant `json:"variants,omitempty" yaml:"variants,omitempty"`
+	DockerVersion string               `json:"docker_version,omitempty" yaml:"docker_version,omitempty"`
 	// What the compose file reserves, summed over its services
-	ReservedMemoryMB int     `json:"reserved_memory_mb,omitempty"`
-	ReservedCPUs     float64 `json:"reserved_cpus,omitempty"`
+	ReservedMemoryMB int     `json:"reserved_memory_mb,omitempty" yaml:"reserved_memory_mb,omitempty"`
+	ReservedCPUs     float64 `json:"reserved_cpus,omitempty" yaml:"reserved_cpus,omitempty"`
 }
 
 type RequirementVariant struct {
-	When     *Condition `json:"when,omitempty"`
-	MemoryMB int        `json:"memory_mb,omitempty"`
-	CPUs     float64    `json:"cpus,omitempty"`
+	When     *Condition `json:"when,omitempty" yaml:"when,omitempty"`
+	MemoryMB int        `json:"memory_mb,omitempty" yaml:"memory_mb,omitempty"`
+	CPUs     float64    `json:"cpus,omitempty" yaml:"cpus,omitempty"`
 }
 
 // Condition is a script's [[ "$VAR" == "value" ]], or != with Not.
 type Condition struct {
-	Variable string `json:"variable"`
-	Value    string `json:"value"`
-	Not      bool   `json:"not,omitempty"`
+	Variable string `json:"variable" yaml:"variable"`
+	Value    string `json:"value" yaml:"value"`
+	Not      bool   `json:"not,omitempty" yaml:"not,omitempty"`
 }
 
 func (c *Condition) holds(vars map[string]string) bool {
