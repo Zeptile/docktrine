@@ -44,31 +44,42 @@ func StacksDir() string {
 	return "/var/lib/docktrine/stacks"
 }
 
+// gitEnviron is the environment git runs in when it reaches repositories
+// people name.
+func gitEnviron() []string {
+	return append(os.Environ(),
+		// Never wait for a password: public repositories only
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_ASKPASS=/bin/false",
+		// Submodules can't reach file:// or ext:: transports either
+		"GIT_ALLOW_PROTOCOL=https",
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_LFS_SKIP_SMUDGE=1",
+	)
+}
+
+// gitError explains a failed git command in a sentence.
+func gitError(command string, err error, out []byte) error {
+	if strings.Contains(err.Error(), "executable file not found") {
+		return fmt.Errorf("git must be installed on the Docktrine server")
+	}
+	msg := strings.TrimSpace(string(out))
+	if strings.Contains(msg, "terminal prompts disabled") || strings.Contains(msg, "could not read Username") {
+		msg = "the repository is private or doesn't exist; only public repositories are supported"
+	}
+	return fmt.Errorf("git %s: %s", command, msg)
+}
+
 // fetchRepo fetches one commit of src into dir, which must be empty, and
 // returns the commit hash.
 func fetchRepo(ctx context.Context, src *manifest.GitSource, dir string) (string, error) {
 	git := func(args ...string) (string, error) {
 		cmd := exec.CommandContext(ctx, "git", args...)
 		cmd.Dir = dir
-		cmd.Env = append(os.Environ(),
-			// Never wait for a password: public repositories only
-			"GIT_TERMINAL_PROMPT=0",
-			"GIT_ASKPASS=/bin/false",
-			// Submodules can't reach file:// or ext:: transports either
-			"GIT_ALLOW_PROTOCOL=https",
-			"GIT_CONFIG_NOSYSTEM=1",
-			"GIT_LFS_SKIP_SMUDGE=1",
-		)
+		cmd.Env = gitEnviron()
 		out, err := cmd.CombinedOutput()
 		if err != nil {
-			if strings.Contains(err.Error(), "executable file not found") {
-				return "", fmt.Errorf("git must be installed on the Docktrine server")
-			}
-			msg := strings.TrimSpace(string(out))
-			if strings.Contains(msg, "terminal prompts disabled") || strings.Contains(msg, "could not read Username") {
-				msg = "the repository is private or doesn't exist; only public repositories are supported"
-			}
-			return "", fmt.Errorf("git %s: %s", args[0], msg)
+			return "", gitError(args[0], err, out)
 		}
 		return strings.TrimSpace(string(out)), nil
 	}

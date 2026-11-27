@@ -39,29 +39,9 @@ var manifestTypes = strings.Join([]string{
 // InspectImage reads the config of an image from its registry. It works
 // for public images and for the central registry.
 func (d *Deployer) InspectImage(ctx context.Context, ref string) (*ImageInfo, error) {
-	named, err := reference.ParseNormalizedNamed(strings.TrimSpace(ref))
+	r, named, version, err := d.registryFor(ref)
 	if err != nil {
-		return nil, fmt.Errorf("%q is not an image reference", ref)
-	}
-	named = reference.TagNameOnly(named)
-
-	host := reference.Domain(named)
-	if host == "docker.io" {
-		host = "registry-1.docker.io"
-	}
-	version := "latest"
-	if digested, ok := named.(reference.Digested); ok {
-		version = digested.Digest().String()
-	} else if tagged, ok := named.(reference.Tagged); ok {
-		version = tagged.Tag()
-	}
-
-	r := &registryClient{
-		http: &http.Client{Timeout: 15 * time.Second},
-		base: "https://" + host + "/v2/" + reference.Path(named),
-	}
-	if d.cfg.RegistryUser != "" && host == d.registryHost() {
-		r.user, r.password = d.cfg.RegistryUser, d.cfg.RegistryPassword
+		return nil, err
 	}
 
 	var m struct {
@@ -144,6 +124,44 @@ func (d *Deployer) InspectImage(ctx context.Context, ref string) (*ImageInfo, er
 	return info, nil
 }
 
+// registryFor parses an image reference and returns a client for its
+// repository, logged in when it is in the central registry, and the tag or
+// digest to ask for.
+func (d *Deployer) registryFor(ref string) (*registryClient, reference.Named, string, error) {
+	named, err := reference.ParseNormalizedNamed(strings.TrimSpace(ref))
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("%q is not an image reference", ref)
+	}
+	named = reference.TagNameOnly(named)
+
+	host := registryHost(named)
+	version := "latest"
+	if digested, ok := named.(reference.Digested); ok {
+		version = digested.Digest().String()
+	} else if tagged, ok := named.(reference.Tagged); ok {
+		version = tagged.Tag()
+	}
+
+	r := &registryClient{
+		http: &http.Client{Timeout: 15 * time.Second},
+		base: "https://" + host + "/v2/" + reference.Path(named),
+	}
+	if d.cfg.RegistryUser != "" && host == d.registryHost() {
+		r.user, r.password = d.cfg.RegistryUser, d.cfg.RegistryPassword
+	}
+	return r, named, version, nil
+}
+
+// registryHost is where an image's registry answers; Docker Hub's API is
+// not at docker.io.
+func registryHost(named reference.Named) string {
+	host := reference.Domain(named)
+	if host == "docker.io" {
+		host = "registry-1.docker.io"
+	}
+	return host
+}
+
 type registryClient struct {
 	http           *http.Client
 	base           string
@@ -153,10 +171,53 @@ type registryClient struct {
 
 // get fetches a registry path as JSON, answering a token challenge once.
 func (r *registryClient) get(ctx context.Context, path, accept string, out any) error {
+	_, body, err := r.send(ctx, http.MethodGet, path, accept)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(body, out)
+}
+
+// digest asks for the digest of a manifest without downloading it. A HEAD
+// request doesn't count against Docker Hub's pull limit.
+func (r *registryClient) digest(ctx context.Context, version string) (string, error) {
+	header, _, err := r.send(ctx, http.MethodHead, "/manifests/"+version, manifestTypes)
+	if err != nil {
+		return "", err
+	}
+	digest := header.Get("Docker-Content-Digest")
+	if digest == "" {
+		return "", fmt.Errorf("the registry didn't say which digest the tag points to")
+	}
+	return digest, nil
+}
+
+// errRateLimited is a registry or forge asking to slow down, for as long
+// as it said, or an hour when it didn't.
+type errRateLimited struct {
+	host  string
+	until time.Time
+}
+
+func (e *errRateLimited) Error() string {
+	return fmt.Sprintf("%s limits how often it is asked; trying again after %s", e.host, e.until.Format("15:04"))
+}
+
+func rateLimited(host string, h http.Header) *errRateLimited {
+	wait := time.Hour
+	if secs, err := strconv.Atoi(h.Get("Retry-After")); err == nil && secs > 0 {
+		wait = time.Duration(secs) * time.Second
+	}
+	return &errRateLimited{host: host, until: time.Now().Add(wait)}
+}
+
+// send makes a registry request, answering a token challenge once, and
+// returns the response's headers and body.
+func (r *registryClient) send(ctx context.Context, method, path, accept string) (http.Header, []byte, error) {
 	for attempt := 0; ; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.base+path, nil)
+		req, err := http.NewRequestWithContext(ctx, method, r.base+path, nil)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 		req.Header.Set("Accept", accept)
 		if r.token != "" {
@@ -167,29 +228,31 @@ func (r *registryClient) get(ctx context.Context, path, accept string, out any) 
 
 		res, err := r.http.Do(req)
 		if err != nil {
-			return fmt.Errorf("couldn't reach the registry at %s", req.URL.Host)
+			return nil, nil, fmt.Errorf("couldn't reach the registry at %s", req.URL.Host)
 		}
 		body, err := io.ReadAll(io.LimitReader(res.Body, 8<<20))
 		res.Body.Close()
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 
 		switch {
 		case res.StatusCode == http.StatusUnauthorized && attempt == 0 && r.token == "":
 			if err := r.authenticate(ctx, res.Header.Get("WWW-Authenticate")); err != nil {
-				return err
+				return nil, nil, err
 			}
 			continue
+		case res.StatusCode == http.StatusTooManyRequests:
+			return nil, nil, rateLimited(req.URL.Host, res.Header)
 		case res.StatusCode == http.StatusNotFound:
-			return fmt.Errorf("the image or tag doesn't exist")
+			return nil, nil, fmt.Errorf("the image or tag doesn't exist")
 		case res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden:
 			// Docker Hub answers this way for images that don't exist too
-			return fmt.Errorf("the image doesn't exist, or is private")
+			return nil, nil, fmt.Errorf("the image doesn't exist, or is private")
 		case res.StatusCode != http.StatusOK:
-			return fmt.Errorf("the registry answered %s", res.Status)
+			return nil, nil, fmt.Errorf("the registry answered %s", res.Status)
 		}
-		return json.Unmarshal(body, out)
+		return res.Header, body, nil
 	}
 }
 
@@ -230,6 +293,9 @@ func (r *registryClient) authenticate(ctx context.Context, challenge string) err
 		return fmt.Errorf("couldn't reach the registry's login at %s", req.URL.Host)
 	}
 	defer res.Body.Close()
+	if res.StatusCode == http.StatusTooManyRequests {
+		return rateLimited(req.URL.Host, res.Header)
+	}
 	if res.StatusCode != http.StatusOK {
 		return fmt.Errorf("the image doesn't exist, or is private")
 	}

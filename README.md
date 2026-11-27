@@ -300,6 +300,30 @@ deploys. Files from the repository are copied there again on each deploy,
 so a command shouldn't edit them: anything it changed would be overwritten
 while the setup command doesn't run again for the same commit.
 
+### Updates
+
+Docktrine looks for newer versions of what each environment runs: new
+commits on a stack's branch, or on its tag if the tag was moved, and newer
+images behind tags like `latest` or `16`, for apps and for the services of
+compose stacks. A stack pinned to a commit, and images pinned by digest,
+never update. Previews and images built on the node aren't checked.
+
+Checks run in the background every six hours, and when you press **Check
+now** on an environment. They ask Git with `git ls-remote` and registries
+with a `HEAD` request for the tag's digest, which doesn't count against
+Docker Hub's pull limit. Requests to the same host are spaced out, a host
+that answers "too many requests" is left alone for as long as it asks, and
+a check that fails waits longer each time before it runs again. For GitHub
+and Codeberg, the update panel says how many commits are new and links to
+the changes.
+
+The apps list marks environments with an update, and the environment page
+shows what changes. **Update** deploys the running settings again at the
+newest version, as an ordinary deployment with its log, and a rollback to
+go back. For a stack with a setup command, a new commit runs the command
+again, which the page warns about: a migration it runs isn't undone by
+rolling back.
+
 ## CLI reference
 
 Every command talks to the server named by `DOCKTRINE_API_URL`, using
@@ -341,6 +365,7 @@ comments is [deploy/.env.example](deploy/.env.example).
 | `DOCKTRINE_SECRET_KEY` | Master key for secrets: 64 hex characters from `openssl rand -hex 32`. If unset, Docktrine generates `data/secret.key` on first start. Losing this key means losing every stored secret. |
 | `CONFIG_PATH` | Where the database and keys are kept. Defaults to `data`. |
 | `DOCKTRINE_STACKS_DIR` | Where nodes keep the files of compose stacks launched from Git. Defaults to `/var/lib/docktrine/stacks`. |
+| `DOCKTRINE_UPDATE_INTERVAL` | How often to check environments for updates, e.g. `12h`. Defaults to `6h`; `off` leaves only the checks you ask for. |
 | `PORT` | Port the API and UI listen on. Defaults to `3000`. |
 
 ## Development

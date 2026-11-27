@@ -17,6 +17,8 @@
   import Gauge from "./Gauge.svelte";
   import SecretsPanel from "./SecretsPanel.svelte";
   import LogsPanel from "./LogsPanel.svelte";
+  import UpdatePanel from "./UpdatePanel.svelte";
+  import { updateSummary } from "$lib/updates";
   import {
     ExternalLink,
     RefreshCw,
@@ -146,6 +148,20 @@
     if (ok) start(() => api.apps.rollback(app, env, d.id), "Rolling back");
   }
 
+  async function updateNow() {
+    const u = detail?.update;
+    if (!u || !current) return;
+    const setup = u.setup
+      ? ` It runs the setup command again (${u.setup}), which may migrate data in a way rolling back doesn't undo.`
+      : "";
+    const ok = await confirmAction({
+      title: `Update ${env}?`,
+      message: `${updateSummary(u)}. Starts a new deployment of #${current.id} at the newest version, with the same settings.${setup}`,
+      confirmLabel: "Update",
+    });
+    if (ok) start(() => api.apps.update(app, env), "Updating");
+  }
+
   async function destroy() {
     acting = true;
     error = null;
@@ -238,6 +254,8 @@
     </Alert>
   {/if}
 
+  <UpdatePanel {app} {env} update={detail.update} variant="panel" busy={acting || active} onupdate={updateNow} onchecked={load} />
+
   <dl class="mt-8 grid md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)] riveted px-6 sm:px-8 md:divide-x divide-y md:divide-y-0">
     <div class="py-4 md:pr-6 min-w-0">
       <dt class="text-[13px] text-muted-foreground mb-1.5">Running</dt>
@@ -247,6 +265,9 @@
           <p class="text-sm text-muted-foreground mt-1">
             #{current.id}, deployed {timeAgo(current.created_at)}{current.created_by ? ` by ${current.created_by}` : ""}
           </p>
+          {#if detail.update_checkable}
+            <UpdatePanel {app} {env} update={detail.update} variant="line" busy={acting || active} onupdate={updateNow} onchecked={load} />
+          {/if}
         {:else}
           <p class="text-sm text-muted-foreground">Nothing yet.</p>
         {/if}
