@@ -9,9 +9,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Zeptile/docktrine/internal/manifest"
 	"github.com/docker/docker/api/types/container"
@@ -144,11 +146,40 @@ func (d *Deployer) deployCompose(ctx context.Context, t target, log *deployLog) 
 		if err != nil {
 			return err
 		}
-		envFile := filepath.ToSlash(mustRel(root, filepath.Join(projectDir, ".env")))
-		err = syncStack(ctx, cli, root, nodeDir, func(rel string) bool { return rel == envFile })
-		cli.Close()
-		if err != nil {
+		defer cli.Close()
+		// The .env goes too: setup commands read it, and so does running
+		// `docker compose` by hand on the node. It is only readable by root,
+		// and holds nothing the containers' own environment doesn't.
+		if err := syncStack(ctx, cli, root, nodeDir); err != nil {
 			return err
+		}
+
+		if t.spec.Setup != nil {
+			reason, err := d.setupReason(t.spec, t.deploymentID)
+			if err != nil {
+				return err
+			}
+			if reason == "" {
+				log.Printf("Skipping the setup command: it already ran for %s", short(t.spec.Source.Commit))
+			} else {
+				// The command runs where the compose file is, on the node
+				dir := nodeDir
+				if rel := filepath.ToSlash(mustRel(root, projectDir)); rel != "." {
+					dir += "/" + rel
+				}
+				log.Printf("Running the setup command, since %s: %s", reason, t.spec.Setup.Command)
+				if err := runSetup(ctx, cli, t, dir, log); err != nil {
+					return err
+				}
+				log.Printf("Setup finished")
+				if t.spec.Setup.Force {
+					// Redeploying this deployment later shouldn't force it again
+					t.spec.Setup.Force = false
+					if err := d.db.UpdateDeploymentSpec(t.deploymentID, t.spec.Source.Label(), t.spec); err != nil {
+						return err
+					}
+				}
+			}
 		}
 
 		base = []string{"compose",
@@ -158,6 +189,9 @@ func (d *Deployer) deployCompose(ctx context.Context, t target, log *deployLog) 
 		}
 		// Stacks that aren't ours tend to be bigger and slower to start
 		waitTimeout = "300"
+		if t.spec.Setup != nil {
+			waitTimeout = "600"
+		}
 	}
 
 	log.Printf("Pulling images")
@@ -166,9 +200,13 @@ func (d *Deployer) deployCompose(ctx context.Context, t target, log *deployLog) 
 	}
 
 	log.Printf("Starting services")
+	started := time.Now()
 	up := append(base, "up", "--detach", "--remove-orphans", "--wait", "--wait-timeout", waitTimeout)
 	if err := runLogged(ctx, log, environ, up...); err != nil {
 		return fmt.Errorf("docker compose up: %w", err)
+	}
+	if err := waitComposeStable(ctx, t, started, log); err != nil {
+		return err
 	}
 
 	if exposed == "" || len(t.spec.Hostnames) == 0 {
@@ -193,6 +231,66 @@ func mustRel(base, target string) string {
 		return target
 	}
 	return rel
+}
+
+// waitComposeStable catches services that crash right after starting.
+// Without a health check, `up --wait` counts a container as ready the moment
+// it runs, even if it exits a second later and restarts in a loop.
+func waitComposeStable(ctx context.Context, t target, since time.Time, log *deployLog) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(stableWindow):
+	}
+
+	cli, err := connect(t.server)
+	if err != nil {
+		return err
+	}
+	defer cli.Close()
+
+	containers, err := cli.ContainerList(ctx, container.ListOptions{
+		All:     true,
+		Filters: filters.NewArgs(filters.Arg("label", "com.docker.compose.project="+t.project())),
+	})
+	if err != nil {
+		return err
+	}
+	failing := []string{}
+	for _, c := range containers {
+		inspect, err := cli.ContainerInspect(ctx, c.ID)
+		if err != nil {
+			continue
+		}
+		state := inspect.State
+		// Restarts from before this deploy, of a service it left alone,
+		// aren't its doing
+		restartedNow := inspect.RestartCount > 0 && startedAfter(state.StartedAt, since)
+		crashed := state.Status == "exited" && state.ExitCode != 0 && startedAfter(state.StartedAt, since)
+		if !state.Restarting && !restartedNow && !crashed {
+			continue
+		}
+		name := c.Labels["com.docker.compose.service"]
+		if name == "" {
+			name = strings.TrimPrefix(firstName(c.Names), "/")
+		}
+		failing = append(failing, name)
+		log.Printf("Last log lines from %s:", name)
+		for _, line := range tailLogs(cli, c.ID, 20) {
+			log.Printf("  | %s", line)
+		}
+	}
+	if len(failing) > 0 {
+		sort.Strings(failing)
+		return fmt.Errorf("%s %s crashing after starting; see the log lines above",
+			strings.Join(failing, ", "), map[bool]string{true: "is", false: "are"}[len(failing) == 1])
+	}
+	return nil
+}
+
+func startedAfter(startedAt string, since time.Time) bool {
+	at, err := time.Parse(time.RFC3339Nano, startedAt)
+	return err == nil && !at.Before(since.Add(-time.Second))
 }
 
 // waitComposeRouted waits until the ingress routes to the exposed service's
@@ -306,6 +404,10 @@ func ensureNetworkOn(ctx context.Context, t target) error {
 	return ensureNetwork(ctx, cli)
 }
 
+// pullProgress matches the per-layer progress compose prints while pulling,
+// hundreds of lines per image; the "Pull complete" and "Pulled" lines stay.
+var pullProgress = regexp.MustCompile(`^[0-9a-f]{12} (Downloading|Extracting|Waiting|Verifying Checksum|Download complete|Pulling fs layer|Already exists)\b`)
+
 // runLogged runs the docker CLI and copies its output into the deployment log.
 func runLogged(ctx context.Context, log *deployLog, environ []string, args ...string) error {
 	cmd := exec.CommandContext(ctx, "docker", args...)
@@ -321,7 +423,7 @@ func runLogged(ctx context.Context, log *deployLog, environ []string, args ...st
 		defer wg.Done()
 		scanner := bufio.NewScanner(pr)
 		for scanner.Scan() {
-			if line := strings.TrimSpace(scanner.Text()); line != "" {
+			if line := strings.TrimSpace(scanner.Text()); line != "" && !pullProgress.MatchString(line) {
 				log.Printf("  | %s", line)
 			}
 		}

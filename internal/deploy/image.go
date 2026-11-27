@@ -354,7 +354,9 @@ func (d *Deployer) removeWorkload(ctx context.Context, server *database.Server, 
 	timeout := stopGracePeriod
 	for _, c := range containers {
 		cli.ContainerStop(ctx, c.ID, container.StopOptions{Timeout: &timeout})
-		if err := cli.ContainerRemove(ctx, c.ID, container.RemoveOptions{Force: true}); err != nil && !errdefs.IsNotFound(err) {
+		// Purging also takes the anonymous volumes of images that declare
+		// VOLUME, which have no labels to find them by later
+		if err := cli.ContainerRemove(ctx, c.ID, container.RemoveOptions{Force: true, RemoveVolumes: purge}); err != nil && !errdefs.IsNotFound(err) {
 			return err
 		}
 	}

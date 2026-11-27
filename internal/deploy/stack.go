@@ -159,6 +159,8 @@ type StackInfo struct {
 	// The service and port hostnames most likely route to
 	Service string `json:"service,omitempty"`
 	Port    int    `json:"port,omitempty"`
+	// A setup command the stack likely needs, from its install script
+	Setup string `json:"setup,omitempty"`
 }
 
 type StackService struct {
@@ -224,6 +226,7 @@ func InspectStack(ctx context.Context, src *manifest.GitSource, compose string) 
 		compose = string(data)
 
 		projectDir := filepath.Dir(filepath.Join(dir, file))
+		info.Setup = suggestSetup(projectDir)
 		dotEnv = readEnvFile(filepath.Join(projectDir, ".env"))
 		for _, name := range []string{".env.example", ".env.sample", ".env.dist", "example.env", ".env.template"} {
 			if lines := readEnvFile(filepath.Join(projectDir, name)); len(lines) > 0 {
@@ -569,7 +572,7 @@ func resolveStack(ctx context.Context, environ []string, args []string, root, no
 // syncStack copies the checkout at root to dir on the node, through a
 // helper container, so it works over any Docker transport. Files are added
 // and replaced but never deleted: the stack may keep its data there.
-func syncStack(ctx context.Context, cli *client.Client, root, dir string, skip func(rel string) bool) error {
+func syncStack(ctx context.Context, cli *client.Client, root, dir string) error {
 	if err := ensureImage(ctx, cli, helperImage); err != nil {
 		return err
 	}
@@ -590,7 +593,7 @@ func syncStack(ctx context.Context, cli *client.Client, root, dir string, skip f
 	}
 
 	pr, pw := io.Pipe()
-	go func() { pw.CloseWithError(writeTar(pw, root, skip)) }()
+	go func() { pw.CloseWithError(writeTar(pw, root)) }()
 	if err := cli.CopyToContainer(ctx, created.ID, "/stack", pr, container.CopyToContainerOptions{}); err != nil {
 		pr.CloseWithError(err)
 		return fmt.Errorf("copying the stack to the node: %w", err)
@@ -643,7 +646,7 @@ func ensureImage(ctx context.Context, cli *client.Client, ref string) error {
 	return nil
 }
 
-func writeTar(w io.Writer, root string, skip func(rel string) bool) error {
+func writeTar(w io.Writer, root string) error {
 	tw := tar.NewWriter(w)
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -654,7 +657,7 @@ func writeTar(w io.Writer, root string, skip func(rel string) bool) error {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		if d.Name() == ".git" || skip(rel) {
+		if d.Name() == ".git" {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}

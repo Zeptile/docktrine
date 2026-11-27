@@ -231,7 +231,7 @@ volumes:
 	}
 }
 
-func TestWriteTarSkipsGitAndEnv(t *testing.T) {
+func TestWriteTarSkipsGit(t *testing.T) {
 	root := t.TempDir()
 	os.MkdirAll(filepath.Join(root, ".git", "objects"), 0700)
 	os.MkdirAll(filepath.Join(root, "conf"), 0700)
@@ -242,7 +242,7 @@ func TestWriteTarSkipsGitAndEnv(t *testing.T) {
 
 	tarPath := filepath.Join(t.TempDir(), "out.tar")
 	f, _ := os.Create(tarPath)
-	if err := writeTar(f, root, func(rel string) bool { return rel == ".env" }); err != nil {
+	if err := writeTar(f, root); err != nil {
 		t.Fatal(err)
 	}
 	f.Close()
@@ -252,14 +252,29 @@ func TestWriteTarSkipsGitAndEnv(t *testing.T) {
 		t.Skip("tar is not available")
 	}
 	listing := string(out)
-	for _, want := range []string{"conf/", "conf/app.conf", "conf/link.conf -> app.conf"} {
+	for _, want := range []string{"conf/", "conf/app.conf", "conf/link.conf -> app.conf", ".env"} {
 		if !strings.Contains(listing, want) {
 			t.Errorf("tar is missing %q:\n%s", want, listing)
 		}
 	}
-	for _, unwanted := range []string{".git", ".env"} {
+	for _, unwanted := range []string{".git/"} {
 		if strings.Contains(listing, unwanted) {
 			t.Errorf("tar has %q:\n%s", unwanted, listing)
+		}
+	}
+}
+
+func TestPullProgressFilter(t *testing.T) {
+	noise := []string{"ee3b182878a3 Extracting 2B", "07c20638852b Downloading 12.1MB", "1852dbe34288 Waiting", "aa11bb22cc33 Pulling fs layer"}
+	kept := []string{"ee3b182878a3 Pull complete 0B", "Image grafana/grafana Pulled", "Container grafana Started", "Downloading the internet"}
+	for _, l := range noise {
+		if !pullProgress.MatchString(l) {
+			t.Errorf("%q should be filtered", l)
+		}
+	}
+	for _, l := range kept {
+		if pullProgress.MatchString(l) {
+			t.Errorf("%q should be kept", l)
 		}
 	}
 }

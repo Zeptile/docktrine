@@ -15,7 +15,9 @@ docktrine rollback prod
 ```
 
 A web UI shows every app, its deployment history and logs, and lets you
-redeploy, roll back, manage secrets and nodes.
+redeploy, roll back, manage secrets and nodes. It also launches apps you
+didn't write, from a container image or a compose stack in any public Git
+repository.
 
 ## Contents
 
@@ -23,6 +25,7 @@ redeploy, roll back, manage secrets and nodes.
 - [Quick start](#quick-start)
 - [docktrine.yaml](#dockertrineyaml)
 - [Secrets](#secrets)
+- [Launching from the UI](#launching-from-the-ui)
 - [CLI reference](#cli-reference)
 - [Server configuration](#server-configuration)
 - [Development](#development)
@@ -215,6 +218,64 @@ deploy that needs a secret which isn't set fails immediately, before touching
 the running version. The Secrets tab of an environment in the UI flags any
 missing secrets.
 
+## Launching from the UI
+
+Apps you didn't write, such as Sentry, Plausible or Uptime Kuma, don't need a
+repository of your own or a `docktrine.yaml`. Under **Apps → Launch an app**,
+pick one of:
+
+- **Container image**, e.g. `postgres:16`. Docktrine reads the image's
+  config from its registry, fills in the port, and points out where it keeps
+  data so you can put that in a volume.
+- **Compose from Git**, a public repository such as
+  `https://github.com/getsentry/self-hosted`. You can paste the address of a
+  branch, tag or file from your browser. Docktrine reads the stack, suggests
+  the service hostnames route to, and lists every variable the stack reads,
+  with the defaults from its `.env` and descriptions from its comments.
+- **Paste compose**, for a single compose file.
+
+Variables can be stored as encrypted secrets with the lock next to each one.
+Credentials such as `*_PASSWORD` and `*_TOKEN` are locked by default.
+
+Each deploy of a stack from Git fetches the repository at the given branch,
+tag or commit and records the commit it ran, so redeploying or rolling back
+to that deployment runs exactly that commit again. The repository's files go
+to the node, into `/var/lib/docktrine/stacks/<app>-<env>`, so the configs it
+mounts with relative paths (`./nginx.conf:/etc/nginx/nginx.conf`) work there.
+Docktrine adds and replaces files in that directory but never deletes any,
+since stacks often keep data next to their compose file. Destroying the
+environment with the volumes deleted removes the directory too.
+
+**Configure** on an environment opens the same form, filled in from what
+runs now, to change and redeploy it. An app deployed with the CLI can be
+changed there too, but its next CLI deploy replaces those changes.
+
+### Setup commands
+
+Some stacks need a step before `docker compose up`. Sentry's `install.sh`,
+for example, creates its configuration, builds images and migrates its
+database. A stack from Git can have a **setup command** for this. When the
+repository has an `install.sh`, the form fills it in, with whichever of its
+options keep it from stopping to ask questions. For Sentry it also offers to
+create the first user from `SENTRY_ADMIN_EMAIL` and `SENTRY_ADMIN_PASSWORD`.
+
+The command runs on the node before the services start, in the stack's
+directory there, in a `docker:cli` container with bash, the node's Docker,
+and the environment's variables and secrets. `COMPOSE_PROJECT_NAME` is set
+to `<app>-<env>`, the project Docktrine runs the stack as, whatever the
+stack's own `.env` says. The command stops at the first step that fails, and
+the deploy fails with it, before anything restarts. Its output goes to the
+deploy log.
+
+It runs on the first deploy, and again whenever the stack's commit or the
+command changes, which is when install scripts expect to run. It can also
+run on every deploy, or on one deploy when you ask for it under Configure.
+
+Files the command creates in the stack's directory stay there across
+deploys. Files from the repository are copied there again on each deploy,
+so a command shouldn't edit them: anything it changed would be overwritten
+while the setup command doesn't run again for the same commit.
+
 ## CLI reference
 
 Every command talks to the server named by `DOCKTRINE_API_URL`, using
@@ -255,6 +316,7 @@ comments is [deploy/.env.example](deploy/.env.example).
 | `DOCKTRINE_NPM_CERTIFICATE_ID` | Optional. Reuse an existing certificate, such as a wildcard, instead of requesting one per hostname. |
 | `DOCKTRINE_SECRET_KEY` | Master key for secrets: 64 hex characters from `openssl rand -hex 32`. If unset, Docktrine generates `data/secret.key` on first start. Losing this key means losing every stored secret. |
 | `CONFIG_PATH` | Where the database and keys are kept. Defaults to `data`. |
+| `DOCKTRINE_STACKS_DIR` | Where nodes keep the files of compose stacks launched from Git. Defaults to `/var/lib/docktrine/stacks`. |
 | `PORT` | Port the API and UI listen on. Defaults to `3000`. |
 
 ## Development

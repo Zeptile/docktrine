@@ -4,6 +4,7 @@
   import ContainerList from "./lib/components/ContainerList.svelte";
   import ServerList from "./lib/components/ServerList.svelte";
   import Activity from "./lib/components/Activity.svelte";
+  import Launch from "./lib/components/Launch.svelte";
   import Users from "./lib/components/Users.svelte";
   import Account from "./lib/components/Account.svelte";
   import Login from "./lib/components/Login.svelte";
@@ -17,14 +18,16 @@
   import { onMount } from "svelte";
   import { Sun, Moon, Monitor, LogOut, Search } from "lucide-svelte";
 
-  // Routes: #/apps, #/apps/<app>/<env>[/<tab>], #/activity, #/containers,
-  // #/servers, #/users, #/account, #/invite/<token>
+  // Routes: #/apps, #/apps/<app>/<env>[/<tab>], #/apps/<app>/<env>/configure,
+  // #/launch, #/activity, #/containers, #/servers, #/users, #/account,
+  // #/invite/<token>
   type Route =
-    | { page: "apps" | "activity" | "containers" | "servers" | "users" | "account" }
+    | { page: "apps" | "launch" | "activity" | "containers" | "servers" | "users" | "account" }
     | { page: "environment"; app: string; env: string; tab?: string }
+    | { page: "configure"; app: string; env: string }
     | { page: "invite"; token: string };
 
-  const simplePages = ["apps", "activity", "containers", "servers", "users", "account"] as const;
+  const simplePages = ["apps", "launch", "activity", "containers", "servers", "users", "account"] as const;
 
   let route = $state<Route>(parse(location.hash));
   // Unknown until the first /me answers, so the sign-in page doesn't flash
@@ -46,6 +49,7 @@
 
   const titles: Record<string, string> = {
     apps: "Apps",
+    launch: "Launch an app",
     activity: "Activity",
     containers: "Containers",
     servers: "Servers",
@@ -54,16 +58,23 @@
     invite: "Welcome aboard",
   };
 
-  let active = $derived(route.page === "environment" ? "apps" : route.page);
+  let active = $derived(route.page === "environment" || route.page === "configure" || route.page === "launch" ? "apps" : route.page);
   let themeLabel = $derived(themes.find((t) => t.id === $theme)?.label);
 
   $effect(() => {
     document.title =
-      route.page === "environment" ? `${route.app}/${route.env} · Docktrine` : `${titles[route.page]} · Docktrine`;
+      route.page === "environment"
+        ? `${route.app}/${route.env} · Docktrine`
+        : route.page === "configure"
+          ? `Configure ${route.app}/${route.env} · Docktrine`
+          : `${titles[route.page]} · Docktrine`;
   });
 
   function parse(hash: string): Route {
     const parts = hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
+    if (parts[0] === "apps" && parts.length >= 4 && parts[3] === "configure") {
+      return { page: "configure", app: parts[1], env: parts[2] };
+    }
     if (parts[0] === "apps" && parts.length >= 3) {
       return { page: "environment", app: parts[1], env: parts[2], tab: parts[3] };
     }
@@ -193,6 +204,12 @@
     {:else if route.page === "environment"}
       {#key `${route.app}/${route.env}`}
         <EnvironmentDetail app={route.app} env={route.env} tab={route.tab} />
+      {/key}
+    {:else if route.page === "launch"}
+      {#key "launch"}<Launch />{/key}
+    {:else if route.page === "configure"}
+      {#key `${route.app}/${route.env}`}
+        <Launch app={route.app} env={route.env} />
       {/key}
     {:else if route.page === "activity"}
       <Activity />

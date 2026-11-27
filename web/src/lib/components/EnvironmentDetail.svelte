@@ -24,6 +24,7 @@
     Trash2,
     GitBranch,
     Clock,
+    SlidersHorizontal,
   } from "lucide-svelte";
 
   export let app: string;
@@ -198,6 +199,15 @@
       <RefreshCw />
     </Button>
     {#if $can("deployer")}
+      {#if current?.spec || latest?.spec}
+        <a
+          href="{base}/configure"
+          class="inline-flex items-center justify-center gap-2 h-9 px-3.5 rounded-md text-sm font-medium border border-input bg-card hover:bg-muted hover:border-foreground/30 [&_svg]:size-4"
+          title="Change the image, variables, hostnames and more, then deploy"
+        >
+          <SlidersHorizontal /> Configure
+        </a>
+      {/if}
       <Button
         variant="outline"
         onclick={redeploy}

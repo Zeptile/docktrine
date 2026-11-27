@@ -86,12 +86,27 @@ export interface ServerHealth {
 
 export type DeploymentStatus = "pending" | "running" | "succeeded" | "failed";
 
+// A compose stack read from a public Git repository at deploy time
+export interface GitSource {
+  repo: string;
+  ref?: string;
+  // The compose file, relative to the repository root
+  path?: string;
+  // The commit a deployment ran, recorded by the server
+  commit?: string;
+}
+
 export interface Spec {
   app: string;
   environment: string;
   node: string;
   image?: string;
   compose?: string;
+  source?: GitSource;
+  // Run on the node before a stack from Git starts, e.g. ./install.sh
+  setup?: { command: string; always?: boolean; force?: boolean };
+  // "ui" for apps launched from the web UI; the CLI leaves it out
+  origin?: string;
   expose?: { service: string; port: number };
   hostnames?: string[];
   port?: number;
@@ -157,6 +172,52 @@ export interface EnvironmentDetail {
   hostnames: string[];
   containers?: ContainerStatus[];
   containers_error?: string;
+}
+
+export interface StackPort {
+  target: number;
+  // Published on the node, e.g. "9000" or "$SENTRY_BIND"
+  published?: string;
+}
+
+export interface StackService {
+  name: string;
+  image?: string;
+  build?: boolean;
+  ports: StackPort[];
+}
+
+export interface StackVariable {
+  name: string;
+  // What applies when it isn't set
+  default?: string;
+  has_default?: boolean;
+  // A starting value from .env.example
+  suggested?: string;
+  required?: boolean;
+  secret?: boolean;
+  description?: string;
+}
+
+export interface StackInfo {
+  compose_file?: string;
+  // Offered when the repository root has no compose file
+  compose_files?: string[];
+  commit?: string;
+  services?: StackService[];
+  variables?: StackVariable[];
+  service?: string;
+  port?: number;
+  // A setup command suggested from the repository's install script
+  setup?: string;
+}
+
+export interface ImageInfo {
+  image: string;
+  ports: number[];
+  volumes: string[];
+  healthcheck?: boolean;
+  port?: number;
 }
 
 export interface SecretInfo {
@@ -464,6 +525,16 @@ export const api = {
         onChunk(decoder.decode(value, { stream: true }));
       }
     },
+  },
+
+  config: (): Promise<{ registry: string; npm_configured: boolean }> => request("/config"),
+
+  // Reading what to launch, to fill in the form
+  launch: {
+    inspectStack: (body: { source: GitSource } | { compose: string }): Promise<StackInfo> =>
+      request("/stacks/inspect", json("POST", body)),
+    inspectImage: (image: string): Promise<ImageInfo> =>
+      request(`/images/inspect?image=${enc(image)}`),
   },
 
   keys: {

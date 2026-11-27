@@ -190,7 +190,11 @@ func (d *Deployer) run(env *database.Environment, dep *database.Deployment) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), deployTimeout)
+	timeout := deployTimeout
+	if spec.Setup != nil {
+		timeout = setupDeployTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	target := target{server: server, spec: spec, deploymentID: dep.ID, env: vars}

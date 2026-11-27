@@ -7,7 +7,8 @@
   import Readouts from "./ui/Readouts.svelte";
   import Gauge from "./Gauge.svelte";
   import DeployHistory from "./DeployHistory.svelte";
-  import { GitBranch, Clock, Search, ExternalLink, Rows3, LayoutGrid } from "lucide-svelte";
+  import { can } from "$lib/session";
+  import { GitBranch, Clock, Search, ExternalLink, Rows3, LayoutGrid, Rocket } from "lucide-svelte";
 
   type State = "all" | "failed" | "deploying" | "live" | "idle" | "previews";
   type View = "ledger" | "gauges";
@@ -180,20 +181,42 @@
   {#if !error}<Loading label="Reading the gauges" />{/if}
 {:else if items.length === 0}
   <h1 class="page-title text-[2.25rem]">Nothing is deployed yet.</h1>
-  <div class="mt-6 max-w-xl text-muted-foreground space-y-3">
-    <p>Deploy from a repository with the CLI:</p>
-    <pre class="terminal rounded-md px-5 py-4 text-[13px]">docktrine init        <span class="opacity-60"># writes docktrine.yaml</span>
+  <div class="mt-8 grid md:grid-cols-2 gap-5 max-w-4xl">
+    {#if $can("deployer")}
+      <section class="riveted px-6 py-6">
+        <h2 class="section-title">Launch from here</h2>
+        <p class="text-sm text-muted-foreground mt-1.5">
+          Run a container image, or a compose stack from a Git repository, like Sentry or Plausible. Nothing to
+          set up first.
+        </p>
+        <a href="#/launch" class="brass-fill font-semibold inline-flex items-center gap-2 h-10 px-4 rounded-md text-sm mt-5">
+          <Rocket class="w-4 h-4" /> Launch an app
+        </a>
+      </section>
+    {/if}
+    <section class="riveted px-6 py-6 text-muted-foreground">
+      <h2 class="section-title text-foreground">Deploy your own code</h2>
+      <p class="text-sm mt-1.5">From a repository, with the CLI:</p>
+      <pre class="terminal rounded-md px-5 py-4 text-[13px] mt-3">docktrine init        <span class="opacity-60"># writes docktrine.yaml</span>
 docktrine deploy dev</pre>
-    <p>It shows up here as soon as the first deploy starts.</p>
+      <p class="text-sm mt-3">It shows up here as soon as the first deploy starts.</p>
+    </section>
   </div>
 {:else}
-  <header class="mb-6">
-    <h1 class="font-slab font-bold text-[1.6rem] sm:text-[1.85rem] leading-[1.2] max-w-4xl text-balance">{headline}</h1>
-    <p class="text-muted-foreground mt-1.5">
-      {appCount} {appCount === 1 ? "app" : "apps"} in {items.length}
-      {items.length === 1 ? "environment" : "environments"}, on {servers.length}
-      {servers.length === 1 ? "server" : "servers"}.
-    </p>
+  <header class="mb-6 flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+    <div class="min-w-0">
+      <h1 class="font-slab font-bold text-[1.6rem] sm:text-[1.85rem] leading-[1.2] max-w-4xl text-balance">{headline}</h1>
+      <p class="text-muted-foreground mt-1.5">
+        {appCount} {appCount === 1 ? "app" : "apps"} in {items.length}
+        {items.length === 1 ? "environment" : "environments"}, on {servers.length}
+        {servers.length === 1 ? "server" : "servers"}.
+      </p>
+    </div>
+    {#if $can("deployer")}
+      <a href="#/launch" class="brass-fill font-semibold inline-flex items-center gap-2 h-9 px-3.5 rounded-md text-sm shrink-0">
+        <Rocket class="w-4 h-4" /> Launch an app
+      </a>
+    {/if}
   </header>
 
   <Readouts

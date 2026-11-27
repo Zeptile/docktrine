@@ -105,6 +105,19 @@ func (g *GitSource) Validate() error {
 	return nil
 }
 
+// Setup is a command a stack from Git needs run on the node before it
+// starts, like Sentry's install.sh, which creates its configuration and
+// migrates its database. It runs in the stack's directory on the node, with
+// the node's Docker and the environment's compose project name.
+type Setup struct {
+	Command string `json:"command"`
+	// Run it on every deploy, rather than when the commit or the command
+	// changes
+	Always bool `json:"always,omitempty"`
+	// Run it on this deploy whatever changed; cleared once it has run
+	Force bool `json:"force,omitempty"`
+}
+
 // Origins of a Spec. The CLI leaves it empty.
 const OriginUI = "ui"
 
@@ -116,6 +129,7 @@ type Spec struct {
 	Image       string            `json:"image,omitempty"`
 	Compose     string            `json:"compose,omitempty"`
 	Source      *GitSource        `json:"source,omitempty"`
+	Setup       *Setup            `json:"setup,omitempty"`
 	Expose      *Expose           `json:"expose,omitempty"`
 	Hostnames   []string          `json:"hostnames,omitempty"`
 	Port        int               `json:"port,omitempty"`
@@ -303,6 +317,14 @@ func (s *Spec) Validate() error {
 	if s.Source != nil {
 		if err := s.Source.Validate(); err != nil {
 			return err
+		}
+	}
+	if s.Setup != nil {
+		if s.Source == nil {
+			return fmt.Errorf("a setup command needs a stack from a git repository")
+		}
+		if strings.TrimSpace(s.Setup.Command) == "" || len(s.Setup.Command) > 4096 {
+			return fmt.Errorf("the setup command must be between 1 and 4096 characters")
 		}
 	}
 	if s.Port < 0 || s.Port > 65535 {

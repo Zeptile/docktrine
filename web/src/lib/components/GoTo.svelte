@@ -20,6 +20,7 @@
 
   let pages = $derived<Item[]>([
     { href: "#/apps", label: "Apps", hint: "Page" },
+    ...($can("deployer") ? [{ href: "#/launch", label: "Launch an app", hint: "Page" }] : []),
     { href: "#/activity", label: "Activity", hint: "Page" },
     { href: "#/containers", label: "Containers", hint: "Page" },
     { href: "#/servers", label: "Servers", hint: "Page" },
@@ -34,7 +35,12 @@
       const base = `#/apps/${encodeURIComponent(s.environment.app)}/${encodeURIComponent(s.environment.name)}`;
       const env = { href: base, label: name, hint: s.environment.server, env: s };
       // Logs and secrets only when asked for, to keep the list short
-      return q ? [env, { ...env, href: base + "/logs", label: name + " logs" }, { ...env, href: base + "/secrets", label: name + " secrets" }] : [env];
+      const extra = [
+        { ...env, href: base + "/logs", label: name + " logs" },
+        { ...env, href: base + "/secrets", label: name + " secrets" },
+        ...($can("deployer") ? [{ ...env, href: base + "/configure", label: "Configure " + name }] : []),
+      ];
+      return q ? [env, ...extra] : [env];
     });
     const all = [...envItems, ...pages];
     if (!q) return all;
