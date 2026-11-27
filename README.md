@@ -250,6 +250,23 @@ environment with the volumes deleted removes the directory too.
 runs now, to change and redeploy it. An app deployed with the CLI can be
 changed there too, but its next CLI deploy replaces those changes.
 
+Before a launch, the form checks the chosen server and shows the results beside
+the Launch button. The checks update as the form changes.
+
+- **Resources.** Memory, CPUs and the Docker version are checked against what
+  the stack needs. The minimums come from its install script: Sentry's
+  `install/_min-requirements.sh` asks for 14000 MB and 4 CPUs, or 7000 MB and
+  2 CPUs with `COMPOSE_PROFILES=errors-only`. The memory and CPUs its compose
+  services reserve are checked too.
+- **Ports.** Ports the stack publishes on the server are checked against other
+  containers and other processes listening there.
+- **Hostnames.** With hostnames, the server's ingress must be running, the
+  server must have an ingress host and port for the gateway, and Nginx Proxy
+  Manager must be configured.
+
+A failed check stops the launch unless you choose to launch anyway. Warnings
+don't stop it.
+
 ### Setup commands
 
 Some stacks need a step before `docker compose up`. Sentry's `install.sh`,

@@ -8,6 +8,8 @@
     type StackInfo,
     type ImageInfo,
     type Deployment,
+    type Check,
+    type PreflightRequest,
   } from "$lib/api";
   import {
     isName,
@@ -29,6 +31,7 @@
   import Loading from "./ui/Loading.svelte";
   import VariablesEditor from "./launch/VariablesEditor.svelte";
   import HostnamesInput from "./launch/HostnamesInput.svelte";
+  import Preflight from "./launch/Preflight.svelte";
   import { Box, GitBranch, FileCode, X, LoaderCircle, CircleCheck, Rocket, HardDrive } from "lucide-svelte";
 
   interface Props {
@@ -106,6 +109,12 @@
   let submitError = $state<string | null>(null);
   let attempted = $state(false);
 
+  // Whether the server can run it, checked as the form changes
+  let checks = $state<Check[]>([]);
+  let checking = $state(false);
+  let launchAnyway = $state(false);
+  let failedChecks = $derived(checks.filter((c) => c.status === "failed"));
+
   let sourceKey = $derived(
     kind === "image" ? `image:${image.trim()}` : kind === "git" ? `git:${repo.trim()}#${ref.trim()}:${composePath.trim()}` : `compose:${composeText}`
   );
@@ -132,6 +141,39 @@
   let unmountedVolumes = $derived(
     (imageInfo?.volumes ?? []).filter((path) => !volumes.some((v) => v.target.trim() === path))
   );
+
+  // The values variables will have, without secrets: published ports and
+  // requirement conditions like COMPOSE_PROFILES depend on them
+  let effectiveVariables = $derived.by(() => {
+    const vars: Record<string, string> = {};
+    for (const r of rows) {
+      if (!r.key || r.secret) continue;
+      const value = r.value || (r.stack?.has_default ? r.stack.default ?? "" : "");
+      if (value) vars[r.key] = value;
+    }
+    return vars;
+  });
+
+  let preflightRequest = $derived.by((): PreflightRequest | null => {
+    if (!node || !loaded) return null;
+    // A stack is checked once it's been read, so its needs are known
+    if (kind !== "image" && (!stack?.services || stale)) return null;
+    return {
+      node,
+      app: appName,
+      environment: envName,
+      hostnames: hostnames.length ? [...hostnames] : undefined,
+      requirements: kind !== "image" ? stack?.requirements : undefined,
+      ports: published.length ? published.map((p) => ({ service: p.service, published: p.port.published! })) : undefined,
+      variables: Object.keys(effectiveVariables).length ? effectiveVariables : undefined,
+    };
+  });
+
+  // A new failure needs its own decision to launch anyway
+  $effect(() => {
+    void failedChecks.map((c) => c.id + c.title).join();
+    launchAnyway = false;
+  });
 
   let problems = $derived.by(() => {
     const p: string[] = [];
@@ -161,6 +203,8 @@
         if (row && !row.value && !row.stored && !row.stack?.has_default) p.push(`Set ${name}, which the setup command uses.`);
       }
     }
+    if (failedChecks.length && !launchAnyway)
+      p.push(`${node} failed ${failedChecks.length === 1 ? "a check" : "checks"} below. Fix ${failedChecks.length === 1 ? "it" : "them"}, or launch anyway.`);
     return p;
   });
 
@@ -458,7 +502,7 @@
     <p class="hint flex items-start gap-1.5">
       <CircleCheck class="w-3.5 h-3.5 mt-[3px] text-success shrink-0" />
       <span>
-        {#if stack.compose_file}Read <span class="font-mono">{stack.compose_file}</span>{#if stack.commit} at <span class="font-mono">{stack.commit.slice(0, 7)}</span>{/if}:{:else}Read:{/if}
+        {#if stack.compose_file}Read <span class="font-mono">{stack.compose_file}</span>{#if stack.commit}{" "}at <span class="font-mono">{stack.commit.slice(0, 7)}</span>{/if}:{:else}Read:{/if}
         {stack.services.length} {stack.services.length === 1 ? "service" : "services"},
         {stack.variables?.length ?? 0} {stack.variables?.length === 1 ? "variable" : "variables"}.
       </span>
@@ -915,6 +959,14 @@
           </div>
         {/if}
       </dl>
+
+      <Preflight request={preflightRequest} bind:checks bind:checking />
+      {#if failedChecks.length}
+        <label class="flex items-start gap-2.5 text-sm mt-4">
+          <input type="checkbox" bind:checked={launchAnyway} class="w-4 h-4 mt-0.5 accent-[rgb(var(--brass))]" />
+          <span>Launch anyway <span class="block hint mt-0.5">It will likely fail, or run short of resources.</span></span>
+        </label>
+      {/if}
 
       {#if attempted && problems.length}
         <ul class="mt-5 space-y-1.5 text-sm text-destructive" role="alert">

@@ -162,6 +162,7 @@ func main() {
 	// user gives, so it takes the same role as deploying
 	api.Post("/stacks/inspect", canDeploy, handler.InspectStack)
 	api.Get("/images/inspect", canDeploy, handler.InspectImage)
+	api.Post("/launch/preflight", canDeploy, handler.Preflight)
 
 	apps := api.Group("/apps")
 	apps.Get("/", handler.ListApps)

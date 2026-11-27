@@ -62,3 +62,27 @@ func (h *Handler) InspectImage(c *fiber.Ctx) error {
 	}
 	return c.JSON(info)
 }
+
+// Preflight godoc
+// @Summary Check a launch before it starts
+// @Description Check that a node can run what is about to launch: memory, CPUs and Docker version against the stack's requirements, free ports, and an ingress for its hostnames
+// @Tags launch
+// @Accept json
+// @Produce json
+// @Param body body deploy.PreflightRequest true "What is about to launch"
+// @Success 200 {object} deploy.PreflightResult
+// @Failure 404 {object} interface{}
+// @Router /launch/preflight [post]
+func (h *Handler) Preflight(c *fiber.Ctx) error {
+	var req deploy.PreflightRequest
+	if err := c.BodyParser(&req); err != nil || req.Node == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "body must name a node"})
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	res, err := h.deployer.Preflight(ctx, req)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(res)
+}

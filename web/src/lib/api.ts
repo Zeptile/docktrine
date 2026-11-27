@@ -210,6 +210,39 @@ export interface StackInfo {
   port?: number;
   // A setup command suggested from the repository's install script
   setup?: string;
+  // What it needs of the server, for the preflight checks
+  requirements?: Requirements;
+}
+
+export interface Requirements {
+  // The script the minimums come from, e.g. install/_min-requirements.sh
+  source?: string;
+  // The first whose condition holds applies
+  variants?: { when?: { variable: string; value: string; not?: boolean }; memory_mb?: number; cpus?: number }[];
+  docker_version?: string;
+  reserved_memory_mb?: number;
+  reserved_cpus?: number;
+}
+
+export interface PreflightRequest {
+  node: string;
+  app: string;
+  environment: string;
+  hostnames?: string[];
+  requirements?: Requirements;
+  // Published ports as the compose file writes them
+  ports?: { service: string; published: string }[];
+  // Values variables will have; secrets are left out
+  variables?: Record<string, string>;
+}
+
+export type CheckStatus = "ok" | "info" | "warning" | "failed";
+
+export interface Check {
+  id: string;
+  status: CheckStatus;
+  title: string;
+  detail?: string;
 }
 
 export interface ImageInfo {
@@ -535,6 +568,9 @@ export const api = {
       request("/stacks/inspect", json("POST", body)),
     inspectImage: (image: string): Promise<ImageInfo> =>
       request(`/images/inspect?image=${enc(image)}`),
+    // Whether the server can run it: resources, ports, ingress
+    preflight: (body: PreflightRequest, signal?: AbortSignal): Promise<{ checks: Check[] }> =>
+      request("/launch/preflight", { ...json("POST", body), signal }),
   },
 
   keys: {

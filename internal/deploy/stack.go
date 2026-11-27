@@ -161,6 +161,8 @@ type StackInfo struct {
 	Port    int    `json:"port,omitempty"`
 	// A setup command the stack likely needs, from its install script
 	Setup string `json:"setup,omitempty"`
+	// What it needs of the node, for the preflight checks
+	Requirements *Requirements `json:"requirements,omitempty"`
 }
 
 type StackService struct {
@@ -227,6 +229,9 @@ func InspectStack(ctx context.Context, src *manifest.GitSource, compose string) 
 
 		projectDir := filepath.Dir(filepath.Join(dir, file))
 		info.Setup = suggestSetup(projectDir)
+		if req, ok := scriptRequirements(projectDir); ok {
+			info.Requirements = &req
+		}
 		dotEnv = readEnvFile(filepath.Join(projectDir, ".env"))
 		for _, name := range []string{".env.example", ".env.sample", ".env.dist", "example.env", ".env.template"} {
 			if lines := readEnvFile(filepath.Join(projectDir, name)); len(lines) > 0 {
@@ -244,6 +249,12 @@ func InspectStack(ctx context.Context, src *manifest.GitSource, compose string) 
 		info.Services = append(info.Services, describeService(name, services[name]))
 	}
 	info.Service, info.Port = suggestExposed(info.Services)
+	if mem, cpus := composeReservations(services); mem > 0 || cpus > 0 {
+		if info.Requirements == nil {
+			info.Requirements = &Requirements{}
+		}
+		info.Requirements.ReservedMemoryMB, info.Requirements.ReservedCPUs = mem, cpus
+	}
 	info.Variables = stackVariables(compose, dotEnv, example)
 	return info, nil
 }
