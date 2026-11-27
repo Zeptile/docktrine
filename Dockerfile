@@ -40,6 +40,7 @@ FROM alpine:3.22
 
 # docker CLI + compose plugin: compose deploys shell out to `docker compose`
 # openssh-client: ssh:// nodes, for both the Docker API and compose
+# git: compose stacks launched from a Git repository
 # tini: the API would otherwise be PID 1 and never reap the ssh and docker
 #   processes it starts once they exit
 RUN apk add --no-cache \
@@ -47,6 +48,7 @@ RUN apk add --no-cache \
     ca-certificates \
     docker-cli \
     docker-cli-compose \
+    git \
     openssh-client \
     tini
 

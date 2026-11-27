@@ -196,7 +196,7 @@ func (d *Deployer) run(env *database.Environment, dep *database.Deployment) {
 	target := target{server: server, spec: spec, deploymentID: dep.ID, env: vars}
 	log.Printf("Deploying %s/%s to %s", spec.App, spec.Environment, server.Name)
 
-	if spec.Compose != "" {
+	if spec.Compose != "" || spec.Source != nil {
 		err = d.deployCompose(ctx, target, log)
 	} else {
 		err = d.deployImage(ctx, target, log)
@@ -352,7 +352,22 @@ func (d *Deployer) Destroy(env *database.Environment, purge bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	if err := d.removeWorkload(ctx, server, env.App, env.Name, purge); err != nil {
+	// Stacks from Git keep files on the node, which purging removes too
+	stackFiles := false
+	if purge {
+		history, err := d.db.ListDeployments(env.ID, 1000)
+		if err != nil {
+			return err
+		}
+		for _, dep := range history {
+			if dep.Spec != nil && dep.Spec.Source != nil {
+				stackFiles = true
+				break
+			}
+		}
+	}
+
+	if err := d.removeWorkload(ctx, server, env.App, env.Name, purge, stackFiles); err != nil {
 		return err
 	}
 	if err := d.removeProxyHosts(env); err != nil {

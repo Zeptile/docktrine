@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Zeptile/docktrine/internal/manifest"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"gopkg.in/yaml.v3"
@@ -24,7 +25,51 @@ import (
 // Env and secrets are written to .env, so the compose file can reference
 // them as ${VAR}, and are also injected into the exposed service.
 func (d *Deployer) deployCompose(ctx context.Context, t target, log *deployLog) error {
-	services, err := composeServices(t.spec.Compose)
+	work, err := os.MkdirTemp("", "docktrine-compose-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(work)
+
+	// The project directory: the checkout of a stack from Git, or a
+	// directory holding just the compose file sent by the CLI
+	root := filepath.Join(work, "project")
+	if err := os.MkdirAll(root, 0700); err != nil {
+		return err
+	}
+	composePath := filepath.Join(root, "docker-compose.yml")
+	compose := t.spec.Compose
+
+	if src := t.spec.Source; src != nil {
+		log.Printf("Fetching %s%s", src.Repo, refSuffix(src))
+		commit, err := fetchRepo(ctx, src, root)
+		if err != nil {
+			return err
+		}
+		file, err := findComposeFile(root, src.Path)
+		if err != nil {
+			return err
+		}
+		log.Printf("Using %s at %s", file, commit[:min(12, len(commit))])
+		// Redeploying or rolling back to this deployment runs this commit
+		if src.Commit != commit {
+			src.Commit = commit
+			if err := d.db.UpdateDeploymentSpec(t.deploymentID, src.Label(), t.spec); err != nil {
+				return err
+			}
+		}
+		composePath = filepath.Join(root, filepath.FromSlash(file))
+		data, err := os.ReadFile(composePath)
+		if err != nil {
+			return err
+		}
+		compose = string(data)
+	} else if err := os.WriteFile(composePath, []byte(compose), 0600); err != nil {
+		return err
+	}
+	projectDir := filepath.Dir(composePath)
+
+	services, err := composeServices(compose)
 	if err != nil {
 		return err
 	}
@@ -36,25 +81,29 @@ func (d *Deployer) deployCompose(ctx context.Context, t target, log *deployLog) 
 		}
 	}
 
-	dir, err := os.MkdirTemp("", "docktrine-compose-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(dir)
-
 	override, err := t.composeOverride(services, exposed)
 	if err != nil {
 		return err
 	}
 
-	files := map[string][]byte{
-		"docker-compose.yml":     []byte(t.spec.Compose),
-		"docktrine.override.yml": override,
-		".env":                   dotenv(t.env),
-		"config/config.json":     d.dockerConfigJSON(),
+	// The repository's own .env stays as written, since its values may
+	// refer to each other; values set in Docktrine follow it, and the last
+	// assignment of a key wins
+	env, err := os.ReadFile(filepath.Join(projectDir, ".env"))
+	if err != nil && !os.IsNotExist(err) {
+		return err
 	}
-	for name, data := range files {
-		path := filepath.Join(dir, name)
+	if len(env) > 0 {
+		env = append(env, []byte("\n# Set in Docktrine\n")...)
+	}
+	env = append(env, dotenv(t.env)...)
+
+	files := map[string][]byte{
+		filepath.Join(projectDir, ".env"):             env,
+		filepath.Join(work, "docktrine.override.yml"): override,
+		filepath.Join(work, "config", "config.json"):  d.dockerConfigJSON(),
+	}
+	for path, data := range files {
 		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			return err
 		}
@@ -69,14 +118,47 @@ func (d *Deployer) deployCompose(ctx context.Context, t target, log *deployLog) 
 
 	base := []string{"compose",
 		"--project-name", t.project(),
-		"--project-directory", dir,
-		"-f", filepath.Join(dir, "docker-compose.yml"),
-		"-f", filepath.Join(dir, "docktrine.override.yml"),
+		"--project-directory", projectDir,
+		"-f", composePath,
+		"-f", filepath.Join(work, "docktrine.override.yml"),
 	}
 	environ := append(os.Environ(),
 		"DOCKER_HOST="+t.server.Host,
-		"DOCKER_CONFIG="+filepath.Join(dir, "config"),
+		"DOCKER_CONFIG="+filepath.Join(work, "config"),
 	)
+
+	waitTimeout := "120"
+	if t.spec.Source != nil {
+		nodeDir := StacksDir() + "/" + t.project()
+		resolved, err := resolveStack(ctx, environ, base, root, nodeDir)
+		if err != nil {
+			return err
+		}
+		resolvedPath := filepath.Join(work, "resolved.json")
+		if err := os.WriteFile(resolvedPath, resolved, 0600); err != nil {
+			return err
+		}
+
+		log.Printf("Copying the stack's files to %s on %s", nodeDir, t.server.Name)
+		cli, err := connect(t.server)
+		if err != nil {
+			return err
+		}
+		envFile := filepath.ToSlash(mustRel(root, filepath.Join(projectDir, ".env")))
+		err = syncStack(ctx, cli, root, nodeDir, func(rel string) bool { return rel == envFile })
+		cli.Close()
+		if err != nil {
+			return err
+		}
+
+		base = []string{"compose",
+			"--project-name", t.project(),
+			"--project-directory", projectDir,
+			"-f", resolvedPath,
+		}
+		// Stacks that aren't ours tend to be bigger and slower to start
+		waitTimeout = "300"
+	}
 
 	log.Printf("Pulling images")
 	if err := runLogged(ctx, log, environ, append(base, "pull", "--ignore-buildable")...); err != nil {
@@ -84,7 +166,7 @@ func (d *Deployer) deployCompose(ctx context.Context, t target, log *deployLog) 
 	}
 
 	log.Printf("Starting services")
-	up := append(base, "up", "--detach", "--remove-orphans", "--wait", "--wait-timeout", "120")
+	up := append(base, "up", "--detach", "--remove-orphans", "--wait", "--wait-timeout", waitTimeout)
 	if err := runLogged(ctx, log, environ, up...); err != nil {
 		return fmt.Errorf("docker compose up: %w", err)
 	}
@@ -93,6 +175,24 @@ func (d *Deployer) deployCompose(ctx context.Context, t target, log *deployLog) 
 		return nil
 	}
 	return waitComposeRouted(ctx, t, exposed, log)
+}
+
+func refSuffix(src *manifest.GitSource) string {
+	switch {
+	case src.Commit != "":
+		return " at " + src.Commit[:min(12, len(src.Commit))]
+	case src.Ref != "":
+		return " (" + src.Ref + ")"
+	}
+	return ""
+}
+
+func mustRel(base, target string) string {
+	rel, err := filepath.Rel(base, target)
+	if err != nil {
+		return target
+	}
+	return rel
 }
 
 // waitComposeRouted waits until the ingress routes to the exposed service's
@@ -160,7 +260,13 @@ func (t target) composeOverride(services map[string]any, exposed string) ([]byte
 			// alongside its siblings, as without an override.
 			service["networks"] = []string{"default", Network}
 			if len(t.env) > 0 {
-				service["environment"] = t.env
+				// Compose interpolates the override too; $$ keeps a $ in a
+				// value literal
+				env := map[string]string{}
+				for k, v := range t.env {
+					env[k] = strings.ReplaceAll(v, "$", "$$")
+				}
+				service["environment"] = env
 			}
 		}
 		service["labels"] = labels

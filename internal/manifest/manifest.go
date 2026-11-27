@@ -5,6 +5,7 @@ package manifest
 import (
 	"fmt"
 	"os"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -53,6 +54,60 @@ type Environment struct {
 	TTL         string            `yaml:"ttl,omitempty"`
 }
 
+// GitSource is a compose stack read from a Git repository at deploy time,
+// with every file next to the compose file, for stacks that aren't ours.
+type GitSource struct {
+	// An https:// clone URL
+	Repo string `json:"repo"`
+	// A branch, tag or commit; the remote's default branch when empty
+	Ref string `json:"ref,omitempty"`
+	// The compose file, relative to the repository root; found when empty
+	Path string `json:"path,omitempty"`
+	// The commit a deployment ran, recorded once it is fetched, so
+	// redeploying or rolling back to it runs exactly that again
+	Commit string `json:"commit,omitempty"`
+}
+
+// Label names the source in deployment lists, e.g.
+// git:github.com/getsentry/self-hosted#1a2b3c4
+func (g *GitSource) Label() string {
+	repo := strings.TrimSuffix(strings.TrimPrefix(g.Repo, "https://"), ".git")
+	version := g.Ref
+	if g.Commit != "" {
+		version = g.Commit
+		if len(version) > 7 {
+			version = version[:7]
+		}
+	}
+	if version == "" {
+		return "git:" + repo
+	}
+	return "git:" + repo + "#" + version
+}
+
+var refPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
+
+func (g *GitSource) Validate() error {
+	if !strings.HasPrefix(g.Repo, "https://") || strings.ContainsAny(g.Repo, " \t\n") {
+		return fmt.Errorf("the repository must be an https:// URL")
+	}
+	for _, ref := range []string{g.Ref, g.Commit} {
+		if ref != "" && (!refPattern.MatchString(ref) || strings.Contains(ref, "..")) {
+			return fmt.Errorf("invalid git ref %q", ref)
+		}
+	}
+	if g.Path != "" {
+		clean := path.Clean(g.Path)
+		if path.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") {
+			return fmt.Errorf("the compose file must be a path inside the repository")
+		}
+	}
+	return nil
+}
+
+// Origins of a Spec. The CLI leaves it empty.
+const OriginUI = "ui"
+
 // Spec is one environment of a manifest, fully resolved and ready to deploy.
 type Spec struct {
 	App         string            `json:"app"`
@@ -60,6 +115,7 @@ type Spec struct {
 	Node        string            `json:"node"`
 	Image       string            `json:"image,omitempty"`
 	Compose     string            `json:"compose,omitempty"`
+	Source      *GitSource        `json:"source,omitempty"`
 	Expose      *Expose           `json:"expose,omitempty"`
 	Hostnames   []string          `json:"hostnames,omitempty"`
 	Port        int               `json:"port,omitempty"`
@@ -71,6 +127,8 @@ type Spec struct {
 	Preview     bool              `json:"preview,omitempty"`
 	Branch      string            `json:"branch,omitempty"`
 	TTL         string            `json:"ttl,omitempty"`
+	// "ui" for apps launched from the web UI, which docktrine.yaml doesn't describe
+	Origin string `json:"origin,omitempty"`
 }
 
 var namePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
@@ -233,8 +291,22 @@ func (s *Spec) Validate() error {
 	if !namePattern.MatchString(s.Environment) {
 		return fmt.Errorf("invalid environment name %q", s.Environment)
 	}
-	if s.Image == "" && s.Compose == "" {
-		return fmt.Errorf("spec needs an image or a compose file")
+	sources := 0
+	for _, set := range []bool{s.Image != "", s.Compose != "", s.Source != nil} {
+		if set {
+			sources++
+		}
+	}
+	if sources != 1 {
+		return fmt.Errorf("spec needs exactly one of an image, a compose file or a git source")
+	}
+	if s.Source != nil {
+		if err := s.Source.Validate(); err != nil {
+			return err
+		}
+	}
+	if s.Port < 0 || s.Port > 65535 {
+		return fmt.Errorf("invalid port %d", s.Port)
 	}
 	if len(s.Hostnames) > 0 && s.Port == 0 {
 		return fmt.Errorf("a port is required when hostnames are set")

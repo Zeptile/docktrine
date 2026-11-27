@@ -158,6 +158,11 @@ func main() {
 	deployments.Post("/", canDeploy, handler.CreateDeployment)
 	deployments.Get("/:id", handler.GetDeployment)
 
+	// Reading a stack or image for the launch form fetches from URLs the
+	// user gives, so it takes the same role as deploying
+	api.Post("/stacks/inspect", canDeploy, handler.InspectStack)
+	api.Get("/images/inspect", canDeploy, handler.InspectImage)
+
 	apps := api.Group("/apps")
 	apps.Get("/", handler.ListApps)
 	apps.Get("/:app/:env", handler.GetAppEnvironment)

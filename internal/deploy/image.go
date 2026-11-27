@@ -340,7 +340,7 @@ func firstName(names []string) string {
 
 // removeWorkload deletes all containers of an environment, plus compose
 // networks and, with purge, its volumes.
-func (d *Deployer) removeWorkload(ctx context.Context, server *database.Server, app, env string, purge bool) error {
+func (d *Deployer) removeWorkload(ctx context.Context, server *database.Server, app, env string, purge, stackFiles bool) error {
 	cli, err := docker.Connect(server)
 	if err != nil {
 		return err
@@ -384,6 +384,11 @@ func (d *Deployer) removeWorkload(ctx context.Context, server *database.Server, 
 			if err := cli.VolumeRemove(ctx, v.Name, true); err != nil && !errdefs.IsNotFound(err) {
 				return fmt.Errorf("removing volume %s: %w", v.Name, err)
 			}
+		}
+	}
+	if stackFiles {
+		if err := removeStackFiles(ctx, cli, project); err != nil {
+			return fmt.Errorf("removing the stack's files: %w", err)
 		}
 	}
 	return nil

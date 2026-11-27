@@ -213,7 +213,9 @@ func (db *DB) CreateDeployment(env *Environment, spec *manifest.Spec, createdBy 
 	}
 
 	image := spec.Image
-	if image == "" {
+	if spec.Source != nil {
+		image = spec.Source.Label()
+	} else if image == "" {
 		image = "compose"
 	}
 
@@ -268,6 +270,17 @@ func (db *DB) ListDeployments(envID int64, limit int) ([]Deployment, error) {
 		deployments = append(deployments, *d)
 	}
 	return deployments, rows.Err()
+}
+
+// UpdateDeploymentSpec records what a deployment resolved while running,
+// such as the commit of a stack from Git.
+func (db *DB) UpdateDeploymentSpec(id int64, image string, spec *manifest.Spec) error {
+	data, err := json.Marshal(spec)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`UPDATE deployments SET image = ?, spec = ? WHERE id = ?`, image, string(data), id)
+	return err
 }
 
 func (db *DB) AppendDeploymentLog(id int64, line string) error {
