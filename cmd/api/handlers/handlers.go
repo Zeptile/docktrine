@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/Zeptile/docktrine/internal/database"
 	"github.com/Zeptile/docktrine/internal/deploy"
@@ -18,6 +19,9 @@ type Handler struct {
 	db       *database.DB
 	deployer *deploy.Deployer
 	box      *secrets.Box
+	// When StartShellJanitor ran; node shell helpers of ours from before
+	// then were left behind
+	shellStarted time.Time
 }
 
 func NewHandler(db *database.DB, deployer *deploy.Deployer, box *secrets.Box) *Handler {

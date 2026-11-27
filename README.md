@@ -26,6 +26,7 @@ repository.
 - [docktrine.yaml](#dockertrineyaml)
 - [Secrets](#secrets)
 - [Launching from the UI](#launching-from-the-ui)
+- [Shells](#shells)
 - [CLI reference](#cli-reference)
 - [Server configuration](#server-configuration)
 - [Development](#development)
@@ -293,6 +294,32 @@ deploys. Files from the repository are copied there again on each deploy,
 so a command shouldn't edit them: anything it changed would be overwritten
 while the setup command doesn't run again for the same commit.
 
+## Shells
+
+The UI can open a terminal in a running container, or on a server itself.
+
+- **In a container.** From an environment's **Shell** tab, which lists its
+  running services, or from the terminal icon on a running container under
+  Containers. It runs `docker exec` with bash if the container has it, else
+  sh, as the container's default user. This needs the deployer role.
+- **On a server.** From **Shell** on the server under Servers. This is a root
+  shell on the host, so it needs the admin role. Docktrine starts a
+  privileged helper container in the host's process namespace
+  (`busybox`, labelled `docktrine.role=helper`) that enters the host's
+  namespaces with `nsenter`. It works over SSH like everything else.
+
+A shell ends when you close it or leave the page, and after 30 minutes
+without input or 12 hours in all. Anything still running in it is stopped,
+and a server shell's helper container is removed. If the API stops
+mid-session, it removes the helpers it left behind when it starts again;
+any helper older than 12 hours is removed regardless.
+
+Every shell opened and closed is logged with who opened it, where, and for
+how long. Shells are WebSockets at `/api/containers/<id>/shell?server=` and
+`/api/servers/<name>/shell`, and the API refuses ones started by another
+site. Behind a reverse proxy, the proxy must pass WebSocket upgrades and
+keep the `Host` header, or set `X-Forwarded-Host`.
+
 ## CLI reference
 
 Every command talks to the server named by `DOCKTRINE_API_URL`, using
@@ -364,6 +391,7 @@ go test ./...
 | `cmd/cli` | The `docktrine` CLI (Cobra) |
 | `internal/manifest` | `docktrine.yaml` parsing and resolution |
 | `internal/deploy` | Deploy engine: single-image swaps, compose, ingress, previews |
+| `internal/console` | Shells in containers and on nodes, over WebSockets |
 | `internal/npm` | Nginx Proxy Manager API client |
 | `internal/secrets` | Secret encryption |
 | `internal/database` | SQLite storage |

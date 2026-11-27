@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, type AppSummary } from "$lib/api";
+  import { api, type AppSummary, type Server } from "$lib/api";
   import { can } from "$lib/session";
   import StatusBadge from "./ui/StatusBadge.svelte";
   import { Search } from "lucide-svelte";
@@ -10,6 +10,7 @@
   let query = $state("");
   let selected = $state(0);
   let envs = $state<AppSummary[]>([]);
+  let servers = $state<Server[]>([]);
 
   interface Item {
     href: string;
@@ -38,11 +39,20 @@
       const extra = [
         { ...env, href: base + "/logs", label: name + " logs" },
         { ...env, href: base + "/secrets", label: name + " secrets" },
-        ...($can("deployer") ? [{ ...env, href: base + "/configure", label: "Configure " + name }] : []),
+        ...($can("deployer")
+          ? [
+              { ...env, href: base + "/configure", label: "Configure " + name },
+              { ...env, href: base + "/shell", label: name + " shell" },
+            ]
+          : []),
       ];
       return q ? [env, ...extra] : [env];
     });
-    const all = [...envItems, ...pages];
+    // A root shell on each node, for admins who ask for one
+    const shells = q && $can("admin")
+      ? servers.map((s) => ({ href: `#/shell/${encodeURIComponent(s.name)}`, label: `Shell on ${s.name}`, hint: "Server" }))
+      : [];
+    const all = [...envItems, ...pages, ...shells];
     if (!q) return all;
     const words = q.split(/\s+/);
     return all.filter((i) => words.every((w) => i.label.toLowerCase().includes(w)));
@@ -54,6 +64,7 @@
       selected = 0;
       dialog.showModal();
       api.apps.list().then((list) => (envs = list), () => {});
+      if ($can("admin")) api.servers.list().then((list) => (servers = list), () => {});
     }
     if (!open && dialog.open) dialog.close();
   });

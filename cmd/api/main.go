@@ -91,6 +91,7 @@ func main() {
 	app.Static("/", "./web/dist")
 	
 	handler := handlers.NewHandler(db, deployer, box)
+	handler.StartShellJanitor(context.Background())
 
 	// Signing in, and accepting an invite, happen before there's a session
 	auth := app.Group("/api/auth")
@@ -133,6 +134,9 @@ func main() {
 	containers.Get("/:id", handler.GetContainer)
 	containers.Post("/restart/:id", canDeploy, handler.RestartContainer)
 	containers.Post("/create", canDeploy, handler.CreateContainer)
+	// A WebSocket; a shell in a container needs deployer, one on the node
+	// is root on the host and needs admin
+	containers.Get("/:id/shell", canDeploy, handler.ShellUpgrade, handler.ContainerShell())
 
 	servers := api.Group("/servers")
 	servers.Get("/", handler.ListServers)
@@ -143,6 +147,7 @@ func main() {
 	servers.Get("/:name/health", handler.ServerHealth)
 	servers.Post("/:name/ingress", isAdmin, handler.InstallIngress)
 	servers.Post("/:name/prune", isAdmin, handler.PruneServer)
+	servers.Get("/:name/shell", isAdmin, handler.ShellUpgrade, handler.NodeShell())
 
 	api.Get("/config", handler.GetConfig)
 

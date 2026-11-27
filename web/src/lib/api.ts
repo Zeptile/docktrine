@@ -355,6 +355,49 @@ function headers(): Record<string, string> {
   return h;
 }
 
+// Where a shell opens: in a container, or on the node itself (admins only)
+export type ShellTarget = { kind: "container"; server: string; id: string } | { kind: "node"; server: string };
+
+// Status messages from a shell socket; terminal bytes arrive as binary
+export type ShellMessage =
+  | { type: "ready"; shell: string }
+  | { type: "exit"; code: number }
+  | { type: "closed"; reason: string }
+  | { type: "error"; message: string };
+
+function shellPath(target: ShellTarget, size: { cols: number; rows: number }) {
+  const q = new URLSearchParams({ cols: String(size.cols), rows: String(size.rows) });
+  if (target.kind === "node") return `${API_BASE}/servers/${enc(target.server)}/shell?${q}`;
+  q.set("server", target.server);
+  return `${API_BASE}/containers/${enc(target.id)}/shell?${q}`;
+}
+
+// Opens a shell. A browser can't set headers on a WebSocket, so an API key
+// goes as a second subprotocol, which the server reads but never echoes.
+export function openShell(target: ShellTarget, size: { cols: number; rows: number }): WebSocket {
+  const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+  const protocols = ["docktrine"];
+  if (memoryKey) protocols.push(`docktrine-key.${memoryKey}`);
+  const ws = new WebSocket(`${scheme}//${location.host}${shellPath(target, size)}`, protocols);
+  ws.binaryType = "arraybuffer";
+  return ws;
+}
+
+// A failed WebSocket handshake hides its status from the page. Asking the
+// same URL over plain HTTP gets the reason; 426 means access is fine and
+// the failure was elsewhere.
+export async function shellRefusal(target: ShellTarget): Promise<string | null> {
+  try {
+    const response = await fetch(shellPath(target, { cols: 80, rows: 24 }), { headers: headers() });
+    if (response.status === 426) return null;
+    if (response.status === 401) window.dispatchEvent(new Event("docktrine:unauthorized"));
+    const body = await response.json().catch(() => ({}));
+    return body.error || response.statusText;
+  } catch {
+    return null;
+  }
+}
+
 const json = (method: string, body?: unknown): RequestInit => ({
   method,
   body: body === undefined ? undefined : JSON.stringify(body),
