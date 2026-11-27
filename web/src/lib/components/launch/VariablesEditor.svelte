@@ -1,7 +1,10 @@
 <script lang="ts">
   import { newRow, needsValue, parseDotenv, looksSecret, isEnvKey, type VarRow } from "$lib/launch";
+  import { generateSecret, secretFormat } from "$lib/generate";
+  import { toast } from "$lib/toast";
+  import { SvelteSet } from "svelte/reactivity";
   import Button from "../ui/Button.svelte";
-  import { Lock, LockOpen, Plus, X, ChevronRight, ClipboardPaste } from "lucide-svelte";
+  import { Lock, LockOpen, Plus, X, ChevronRight, ClipboardPaste, Dices, Eye, EyeOff, Copy } from "lucide-svelte";
 
   interface Props {
     rows: VarRow[];
@@ -14,6 +17,11 @@
   let showDefaults = $state(false);
   let pasting = $state(false);
   let pasted = $state("");
+  // Rows whose value is shown in the clear, so a generated one can be read
+  // and copied before it is stored
+  let shown = new SvelteSet<number>();
+  // The stored secret waiting on a yes to being replaced
+  let rotating = $state<number | null>(null);
 
   let main = $derived(rows.filter((r) => needsValue(r)));
   let defaults = $derived(rows.filter((r) => !needsValue(r)));
@@ -28,6 +36,51 @@
     }
     return dupes;
   });
+
+  // Credentials someone has to supply: no value yet, nothing stored, and no
+  // default that would do
+  function isMissingSecret(r: VarRow): boolean {
+    return !!r.key && canGenerate(r) && !r.value && !r.stored && needsValue(r);
+  }
+
+  function canGenerate(r: VarRow): boolean {
+    return !!r.key && isEnvKey(r.key) && (r.secret || looksSecret(r.key));
+  }
+
+  let missing = $derived(rows.filter(isMissingSecret));
+
+  function generate(row: VarRow) {
+    row.value = generateSecret(secretFormat(row.key, row.stack?.description, row.stack?.suggested ?? row.stack?.default));
+    row.secret = true;
+    shown.add(row.id);
+    rotating = null;
+  }
+
+  function generateMissing() {
+    const todo = [...missing];
+    for (const r of todo) generate(r);
+    toast(`Generated ${todo.length} secrets. Copy them before you launch; they aren't shown again.`);
+  }
+
+  // A stored secret is only replaced after a second click, since the app
+  // may already be using the old one
+  function onGenerate(row: VarRow) {
+    if (row.stored && !row.value) rotating = row.id;
+    else generate(row);
+  }
+
+  function toggleShown(row: VarRow) {
+    if (!shown.delete(row.id)) shown.add(row.id);
+  }
+
+  async function copyValue(row: VarRow) {
+    try {
+      await navigator.clipboard.writeText(row.value);
+      toast(`Copied ${row.key}.`);
+    } catch {
+      toast("Couldn't copy. Show the value and select it instead.", "error");
+    }
+  }
 
   function add() {
     rows.push(newRow());
@@ -106,13 +159,46 @@
       <input
         bind:value={row.value}
         onpaste={row.stack ? undefined : onPaste}
-        type={row.secret ? "password" : "text"}
+        type={row.secret && !shown.has(row.id) ? "password" : "text"}
         class="input font-mono h-9"
         placeholder={placeholder(row)}
         aria-label="Value of {row.key || 'the variable'}"
-        autocomplete={row.secret ? "new-password" : "off"}
+        autocomplete={row.secret && !shown.has(row.id) ? "new-password" : "off"}
         spellcheck="false"
       />
+      <div class="flex items-center gap-0.5">
+      {#if row.value && row.secret}
+        <button
+          type="button"
+          class="h-9 w-9 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+          aria-label="{shown.has(row.id) ? 'Hide' : 'Show'} the value of {row.key}"
+          aria-pressed={shown.has(row.id)}
+          title={shown.has(row.id) ? "Hide the value" : "Show the value"}
+          onclick={() => toggleShown(row)}
+        >
+          {#if shown.has(row.id)}<EyeOff class="w-4 h-4" />{:else}<Eye class="w-4 h-4" />{/if}
+        </button>
+        <button
+          type="button"
+          class="h-9 w-9 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+          aria-label="Copy the value of {row.key}"
+          title="Copy the value"
+          onclick={() => copyValue(row)}
+        >
+          <Copy class="w-4 h-4" />
+        </button>
+      {/if}
+      {#if canGenerate(row)}
+        <button
+          type="button"
+          class="h-9 w-9 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+          aria-label={row.stored && !row.value ? `Generate a new value for ${row.key}` : `Generate a value for ${row.key}`}
+          title={row.stored && !row.value ? "Generate a new value to replace the stored one" : row.value ? "Generate a different value" : "Generate a random value"}
+          onclick={() => onGenerate(row)}
+        >
+          <Dices class="w-4 h-4" />
+        </button>
+      {/if}
       <button
         type="button"
         class="h-9 w-9 grid place-items-center rounded-md border {row.secret
@@ -127,6 +213,7 @@
       >
         {#if row.secret}<Lock class="w-4 h-4" />{:else}<LockOpen class="w-4 h-4" />{/if}
       </button>
+      </div>
       {#if !row.stack}
         <button
           type="button"
@@ -140,6 +227,21 @@
         <span class="hidden sm:block w-9"></span>
       {/if}
     </div>
+    {#if rotating === row.id}
+      <div class="mt-2 rounded-md border border-warning/50 bg-warning/10 px-3 py-2 text-sm">
+        <p>
+          Replace the stored value of {row.key}? If the app already uses it, such as a database password that was set
+          on first start, changing it here can lock the app out until it is changed there too.
+        </p>
+        <div class="mt-2 flex gap-2">
+          <Button size="sm" type="button" onclick={() => generate(row)}>Generate a new value</Button>
+          <Button size="sm" type="button" variant="ghost" onclick={() => (rotating = null)}>Keep the stored one</Button>
+        </div>
+      </div>
+    {/if}
+    {#if shown.has(row.id) && row.value && row.secret}
+      <p class="hint mt-1">Copy this now. Once launched it is stored encrypted and not shown again.</p>
+    {/if}
     {#if badKey}
       <p class="hint text-destructive">Letters, digits and underscores, not starting with a digit.</p>
     {:else if duplicate.has(row.key)}
@@ -151,6 +253,14 @@
 {/snippet}
 
 <div>
+  {#if missing.length > 1}
+    <div class="mb-1 flex items-center gap-3 flex-wrap">
+      <Button size="sm" type="button" variant="outline" onclick={generateMissing}>
+        <Dices /> Generate {missing.length} missing secrets
+      </Button>
+      <span class="hint">Random values, shown so you can copy them.</span>
+    </div>
+  {/if}
   {#if main.length > 0}
     <ul>
       {#each main as row (row.id)}

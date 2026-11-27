@@ -236,6 +236,13 @@ pick one of:
 
 Variables can be stored as encrypted secrets with the lock next to each one.
 Credentials such as `*_PASSWORD` and `*_TOKEN` are locked by default.
+Next to each secret is a dice button that fills in a random value, made in
+your browser with `crypto.getRandomValues`. It is 32 letters and digits, 50
+for names like `SECRET_KEY`, or hex or base64 when the stack's comments or
+`.env.example` suggest that. The value is shown so you can copy it, since it
+isn't shown again after launch. When several secrets are empty, one button
+generates them all. When you reconfigure an app, the button asks before it
+replaces a stored secret, because the app may already be using the old one.
 
 Each deploy of a stack from Git fetches the repository at the given branch,
 tag or commit and records the commit it ran, so redeploying or rolling back
