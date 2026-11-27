@@ -19,10 +19,11 @@
   import { Sun, Moon, Monitor, LogOut, Search } from "lucide-svelte";
 
   // Routes: #/apps, #/apps/<app>/<env>[/<tab>], #/apps/<app>/<env>/configure,
-  // #/launch, #/activity, #/containers, #/servers, #/users, #/account,
-  // #/invite/<token>
+  // #/launch[/<catalog entry>], #/activity, #/containers, #/servers,
+  // #/users, #/account, #/invite/<token>
   type Route =
-    | { page: "apps" | "launch" | "activity" | "containers" | "servers" | "users" | "account" }
+    | { page: "apps" | "activity" | "containers" | "servers" | "users" | "account" }
+    | { page: "launch"; preset?: string }
     | { page: "environment"; app: string; env: string; tab?: string }
     | { page: "configure"; app: string; env: string }
     | { page: "invite"; token: string };
@@ -79,6 +80,7 @@
       return { page: "environment", app: parts[1], env: parts[2], tab: parts[3] };
     }
     if (parts[0] === "invite" && parts[1]) return { page: "invite", token: parts[1] };
+    if (parts[0] === "launch") return { page: "launch", preset: parts[1] || undefined };
     const page = simplePages.find((p) => p === parts[0]);
     return { page: page ?? "apps" };
   }
@@ -206,7 +208,7 @@
         <EnvironmentDetail app={route.app} env={route.env} tab={route.tab} />
       {/key}
     {:else if route.page === "launch"}
-      {#key "launch"}<Launch />{/key}
+      {#key `launch/${route.preset ?? ""}`}<Launch preset={route.preset} />{/key}
     {:else if route.page === "configure"}
       {#key `${route.app}/${route.env}`}
         <Launch app={route.app} env={route.env} />

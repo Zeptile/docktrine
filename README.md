@@ -234,6 +234,20 @@ pick one of:
   with the defaults from its `.env` and descriptions from its comments.
 - **Paste compose**, for a single compose file.
 
+Or start from a **known app**: Uptime Kuma, n8n, Gitea, Umami, Plausible or
+Sentry. Picking one fills the form with a pinned, tested version, the service
+and port to route to, volumes, the setup command, and the variables it needs,
+with which are required and which are secrets. Variables like Plausible's
+`BASE_URL` follow the first hostname you give. Everything stays editable. The
+known apps are also in the **Go to** palette (Ctrl+K) as "Launch Sentry" and so
+on, and at `#/launch/<name>`.
+
+The catalog is `internal/catalog/presets.yaml`, built into the server and
+served at `GET /api/catalog`. To add an app, copy an entry of the same kind,
+pin it to a released tag, launch it once, and check it against its upstream
+with `DOCKTRINE_CATALOG_LIVE=1 go test ./internal/catalog/`. The plain
+`go test` keeps every entry well-formed.
+
 Variables can be stored as encrypted secrets with the lock next to each one.
 Credentials such as `*_PASSWORD` and `*_TOKEN` are locked by default.
 Next to each secret is a dice button that fills in a random value, made in
@@ -396,6 +410,7 @@ go test ./...
 | `cmd/cli` | The `docktrine` CLI (Cobra) |
 | `internal/manifest` | `docktrine.yaml` parsing and resolution |
 | `internal/deploy` | Deploy engine: single-image swaps, compose, ingress, previews |
+| `internal/catalog` | Known apps for the launch form |
 | `internal/npm` | Nginx Proxy Manager API client |
 | `internal/secrets` | Secret encryption |
 | `internal/database` | SQLite storage |

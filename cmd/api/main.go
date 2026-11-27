@@ -164,6 +164,7 @@ func main() {
 	api.Post("/stacks/inspect", canDeploy, handler.InspectStack)
 	api.Get("/images/inspect", canDeploy, handler.InspectImage)
 	api.Post("/launch/preflight", canDeploy, handler.Preflight)
+	api.Get("/catalog", canDeploy, handler.ListCatalog)
 
 	apps := api.Group("/apps")
 	apps.Get("/", handler.ListApps)

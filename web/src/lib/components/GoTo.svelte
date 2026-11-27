@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, type AppSummary } from "$lib/api";
+  import { api, type AppSummary, type Preset } from "$lib/api";
   import { can } from "$lib/session";
   import StatusBadge from "./ui/StatusBadge.svelte";
   import { Search } from "lucide-svelte";
@@ -10,6 +10,7 @@
   let query = $state("");
   let selected = $state(0);
   let envs = $state<AppSummary[]>([]);
+  let catalog = $state<Preset[]>([]);
 
   interface Item {
     href: string;
@@ -42,7 +43,9 @@
       ];
       return q ? [env, ...extra] : [env];
     });
-    const all = [...envItems, ...pages];
+    // Known apps only when asked for, like "launch" or "sentry"
+    const known = q ? catalog.map((p) => ({ href: `#/launch/${p.id}`, label: `Launch ${p.name}`, hint: "Known app" })) : [];
+    const all = [...envItems, ...pages, ...known];
     if (!q) return all;
     const words = q.split(/\s+/);
     return all.filter((i) => words.every((w) => i.label.toLowerCase().includes(w)));
@@ -54,6 +57,7 @@
       selected = 0;
       dialog.showModal();
       api.apps.list().then((list) => (envs = list), () => {});
+      if ($can("deployer") && !catalog.length) api.launch.catalog().then((list) => (catalog = list), () => {});
     }
     if (!open && dialog.open) dialog.close();
   });

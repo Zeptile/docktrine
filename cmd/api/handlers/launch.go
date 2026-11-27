@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/Zeptile/docktrine/internal/catalog"
 	"github.com/Zeptile/docktrine/internal/deploy"
 	"github.com/Zeptile/docktrine/internal/manifest"
 	"github.com/gofiber/fiber/v2"
@@ -85,4 +86,20 @@ func (h *Handler) Preflight(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(res)
+}
+
+// ListCatalog godoc
+// @Summary List known apps
+// @Description The catalog of presets for the launch form: popular self-hosted apps, pinned to tested versions, with the variables and settings they need
+// @Tags launch
+// @Produce json
+// @Success 200 {array} catalog.Preset
+// @Failure 500 {object} interface{}
+// @Router /catalog [get]
+func (h *Handler) ListCatalog(c *fiber.Ctx) error {
+	presets, err := catalog.All()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(presets)
 }
