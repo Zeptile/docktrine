@@ -148,12 +148,46 @@ export interface Deployment {
   finished_at?: string;
 }
 
+// Whether what an environment runs has a newer version: a new commit on
+// its Git ref, or a tag that points to a new image
+export interface UpdateInfo {
+  // The deployment it compared against, which is the one running
+  deployment_id: number;
+  status: "current" | "available" | "pinned" | "error";
+  git?: {
+    repo: string;
+    ref?: string;
+    // "default" is the remote's default branch
+    ref_kind: "branch" | "tag" | "default" | "commit";
+    current: string;
+    latest?: string;
+    // Commits ahead of what runs; absent when not known
+    behind?: number;
+    compare_url?: string;
+    update: boolean;
+  };
+  images?: {
+    service?: string;
+    image: string;
+    current?: string;
+    latest?: string;
+    update: boolean;
+    error?: string;
+  }[];
+  error?: string;
+  checked_at: string;
+  next_check_at: string;
+  // The setup command updating runs again, e.g. ./install.sh
+  setup?: string;
+}
+
 export interface AppSummary {
   environment: Environment;
   // The last dozen deployments, oldest first
   history: { id: number; status: DeploymentStatus; created_at: string }[];
   latest_deployment?: Deployment;
   current_deployment?: Deployment;
+  update?: UpdateInfo;
 }
 
 export interface ContainerStatus {
@@ -172,6 +206,9 @@ export interface EnvironmentDetail {
   hostnames: string[];
   containers?: ContainerStatus[];
   containers_error?: string;
+  // Whether it runs anything updates can be checked for
+  update_checkable?: boolean;
+  update?: UpdateInfo;
 }
 
 export interface StackPort {
@@ -499,6 +536,13 @@ export const api = {
           ? JSON.stringify({ deployment_id: deploymentId })
           : undefined,
       }),
+
+    // Deploys the running spec at the newest commit and images
+    update: (app: string, env: string): Promise<Deployment> =>
+      request(`/apps/${enc(app)}/${enc(env)}/update`, json("POST")),
+
+    checkUpdates: (app: string, env: string): Promise<UpdateInfo> =>
+      request(`/apps/${enc(app)}/${enc(env)}/update/check`, json("POST")),
 
     destroy: (
       app: string,

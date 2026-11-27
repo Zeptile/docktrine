@@ -73,6 +73,7 @@ func main() {
 
 	deployer := deploy.New(db, box, deploy.ConfigFromEnv())
 	deployer.StartJanitor(context.Background(), 10*time.Minute)
+	deployer.StartUpdateChecks(context.Background(), deploy.UpdateIntervalFromEnv())
 
 	app := fiber.New()
 	
@@ -170,6 +171,10 @@ func main() {
 	apps.Delete("/:app/:env", canDeploy, handler.DestroyEnvironment)
 	apps.Get("/:app/:env/logs", handler.GetAppLogs)
 	apps.Post("/:app/:env/rollback", canDeploy, handler.RollbackEnvironment)
+	// Checking reaches registries and forges, so it takes the same role as
+	// the update it leads to
+	apps.Post("/:app/:env/update", canDeploy, handler.UpdateEnvironment)
+	apps.Post("/:app/:env/update/check", canDeploy, handler.CheckUpdates)
 	apps.Get("/:app/:env/secrets", handler.ListSecrets)
 	apps.Put("/:app/:env/secrets", canDeploy, handler.SetSecrets)
 	apps.Delete("/:app/:env/secrets/:key", canDeploy, handler.DeleteSecret)

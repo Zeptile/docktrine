@@ -8,7 +8,8 @@
   import Gauge from "./Gauge.svelte";
   import DeployHistory from "./DeployHistory.svelte";
   import { can } from "$lib/session";
-  import { GitBranch, Clock, Search, ExternalLink, Rows3, LayoutGrid, Rocket } from "lucide-svelte";
+  import { updateSummary } from "$lib/updates";
+  import { GitBranch, Clock, Search, ExternalLink, Rows3, LayoutGrid, Rocket, ArrowUpCircle } from "lucide-svelte";
 
   type State = "all" | "failed" | "deploying" | "live" | "idle" | "previews";
   type View = "ledger" | "gauges";
@@ -157,8 +158,18 @@
   {:else if current}
     <span class="text-muted-foreground">#{current.id}</span>
     <span class="font-mono text-[12px]" title={current.image}>{shortImage(current.image).replace(`${item.environment.app}:`, ":")}</span>
+    {@render updateMark(item)}
   {:else}
     <span class="text-muted-foreground">Nothing running</span>
+  {/if}
+{/snippet}
+
+<!-- A quiet mark when a newer version is out -->
+{#snippet updateMark(item: AppSummary)}
+  {#if item.update?.status === "available"}
+    <span class="inline-flex items-center gap-1 ml-1 text-[12px] text-brass font-medium" title="{updateSummary(item.update)}. Open the environment to update.">
+      <ArrowUpCircle class="w-3.5 h-3.5" /> update
+    </span>
   {/if}
 {/snippet}
 

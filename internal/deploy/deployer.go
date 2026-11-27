@@ -65,10 +65,12 @@ type Deployer struct {
 	box *secrets.Box
 	cfg Config
 	mu  sync.Mutex
+
+	updates *updateState
 }
 
 func New(db *database.DB, box *secrets.Box, cfg Config) *Deployer {
-	return &Deployer{db: db, box: box, cfg: cfg}
+	return &Deployer{db: db, box: box, cfg: cfg, updates: newUpdateState()}
 }
 
 func (d *Deployer) Config() Config {
@@ -225,6 +227,9 @@ func (d *Deployer) run(env *database.Environment, dep *database.Deployment) {
 	if err := d.db.SetDeploymentStatus(dep.ID, database.DeploymentSucceeded, message); err != nil {
 		logger.Error(err, "Failed to update deployment status")
 	}
+	// What it now runs may be the newest, or not; the last check was about
+	// what it replaced
+	go d.checkAfterDeploy(spec.App, spec.Environment)
 }
 
 // target is everything a deploy strategy needs.
