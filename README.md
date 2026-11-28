@@ -29,8 +29,23 @@ docktrine rollback prod
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/apps-dark.png">
-    <img src="docs/assets/screenshots/apps-light.png" alt="The web UI listing every environment with its release, hostname, server and recent deploys" width="720">
+    <img src="docs/assets/screenshots/apps-light.png" alt="The web UI listing every environment with its release, hostname, server and recent deploys" width="760">
   </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/environment-dark.png">
+    <img src="docs/assets/screenshots/environment-light.png" alt="Deployment history of an environment beside the log of a deploy" width="376">
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/launch-dark.png">
+    <img src="docs/assets/screenshots/launch-light.png" alt="Known apps ready to launch, such as Uptime Kuma, Plausible and Sentry" width="376">
+  </picture>
+</p>
+
+<p align="center">
+  <sub>Every environment at a glance, the log of each deploy, and ready-made setups for known apps.</sub>
 </p>
 
 ## Features
@@ -47,24 +62,6 @@ docktrine rollback prod
 - **Update checks** for new commits and image tags.
 - **Web UI** with history, logs, rollbacks, user roles, and logged shells
   into containers and servers.
-
-### Deployment history and logs
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/environment-dark.png">
-    <img src="docs/assets/screenshots/environment-light.png" alt="An environment page with its running release, containers, deployment history and deploy log" width="600">
-  </picture>
-</p>
-
-### Launch an app
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/launch-dark.png">
-    <img src="docs/assets/screenshots/launch-light.png" alt="The launch page offering known apps and server checks" width="600">
-  </picture>
-</p>
 
 ## How it works
 
