@@ -67,10 +67,13 @@ type Deployer struct {
 	mu  sync.Mutex
 
 	updates *updateState
+	// What each environment is busy with besides deploying, such as a
+	// backup or a restore, by <app>-<env>
+	ops map[string]string
 }
 
 func New(db *database.DB, box *secrets.Box, cfg Config) *Deployer {
-	return &Deployer{db: db, box: box, cfg: cfg, updates: newUpdateState()}
+	return &Deployer{db: db, box: box, cfg: cfg, updates: newUpdateState(), ops: map[string]string{}}
 }
 
 func (d *Deployer) Config() Config {
@@ -80,6 +83,16 @@ func (d *Deployer) Config() Config {
 // Start records a deployment and runs it in the background. Progress is
 // appended to the deployment's log, which clients poll.
 func (d *Deployer) Start(spec *manifest.Spec, createdBy string) (*database.Deployment, error) {
+	return d.start(spec, createdBy, startOptions{})
+}
+
+type startOptions struct {
+	// Redeploying what a restored backup was taken with: the data is
+	// already what the deployment expects
+	skipBackup bool
+}
+
+func (d *Deployer) start(spec *manifest.Spec, createdBy string, opts startOptions) (*database.Deployment, error) {
 	if err := spec.Validate(); err != nil {
 		return nil, err
 	}
@@ -89,6 +102,10 @@ func (d *Deployer) Start(spec *manifest.Spec, createdBy string) (*database.Deplo
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
+	if busy := d.ops[spec.App+"-"+spec.Environment]; busy != "" {
+		return nil, fmt.Errorf("%s/%s can't deploy now: %s", spec.App, spec.Environment, busy)
+	}
 
 	env, err := d.db.UpsertEnvironment(spec)
 	if err != nil {
@@ -107,7 +124,7 @@ func (d *Deployer) Start(spec *manifest.Spec, createdBy string) (*database.Deplo
 		return nil, err
 	}
 
-	go d.run(env, dep)
+	go d.run(env, dep, opts)
 	return dep, nil
 }
 
@@ -159,7 +176,7 @@ func (l *deployLog) Printf(format string, args ...any) {
 	}
 }
 
-func (d *Deployer) run(env *database.Environment, dep *database.Deployment) {
+func (d *Deployer) run(env *database.Environment, dep *database.Deployment, opts startOptions) {
 	log := &deployLog{db: d.db, id: dep.ID}
 	spec := dep.Spec
 
@@ -196,10 +213,14 @@ func (d *Deployer) run(env *database.Environment, dep *database.Deployment) {
 	if spec.Setup != nil {
 		timeout = setupDeployTimeout
 	}
+	// Room for a backup first, of volumes that may be big
+	if policy := spec.BackupBefore(); policy == manifest.BackupBeforeUpgrade || (policy == manifest.BackupBeforeSetup && spec.Setup != nil) {
+		timeout += time.Hour
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	target := target{server: server, spec: spec, deploymentID: dep.ID, env: vars}
+	target := target{server: server, spec: spec, deploymentID: dep.ID, env: vars, skipBackup: opts.skipBackup}
 	log.Printf("Deploying %s/%s to %s", spec.App, spec.Environment, server.Name)
 
 	if spec.Compose != "" || spec.Source != nil {
@@ -238,6 +259,16 @@ type target struct {
 	spec         *manifest.Spec
 	deploymentID int64
 	env          map[string]string
+	// Don't back up first, whatever the spec says
+	skipBackup bool
+}
+
+// backupPolicy is when this deploy backs up first.
+func (t target) backupPolicy() string {
+	if t.skipBackup {
+		return manifest.BackupNever
+	}
+	return t.spec.BackupBefore()
 }
 
 func (t target) project() string {
@@ -352,10 +383,15 @@ func (d *Deployer) dockerConfigJSON() []byte {
 
 // Destroy removes everything an environment runs: containers, its NPM hosts,
 // and with purge also its volumes. The environment record is deleted.
-func (d *Deployer) Destroy(env *database.Environment, purge bool) error {
+// Backups are kept unless deleteBackups says otherwise, since they are
+// what's left of the data once it's purged.
+func (d *Deployer) Destroy(env *database.Environment, purge, deleteBackups bool) error {
 	server, err := d.db.ResolveServer(env.Server)
 	if err != nil {
 		return err
+	}
+	if busy := d.Busy(env.App, env.Name); busy != "" {
+		return fmt.Errorf("%s/%s can't be destroyed now: %s", env.App, env.Name, busy)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -381,6 +417,18 @@ func (d *Deployer) Destroy(env *database.Environment, purge bool) error {
 	}
 	if err := d.removeProxyHosts(env); err != nil {
 		return err
+	}
+	// Only once the rest is gone, so a failed destroy leaves the backups
+	if deleteBackups {
+		backups, err := d.db.ListBackups(env.App, env.Name)
+		if err != nil {
+			return err
+		}
+		for i := range backups {
+			if err := d.DeleteBackup(&backups[i]); err != nil {
+				return fmt.Errorf("deleting backup #%d: %w", backups[i].ID, err)
+			}
+		}
 	}
 	return d.db.DeleteEnvironment(env.ID)
 }
@@ -414,7 +462,8 @@ func (d *Deployer) reapPreviews() {
 			continue
 		}
 		logger.Info(fmt.Sprintf("Preview %s/%s expired, destroying", env.App, env.Name))
-		if err := d.Destroy(env, true); err != nil {
+		// A preview's data, backups included, goes with it
+		if err := d.Destroy(env, true, true); err != nil {
 			logger.Error(err, fmt.Sprintf("Failed to destroy preview %s/%s", env.App, env.Name))
 		}
 	}

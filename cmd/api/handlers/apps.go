@@ -317,12 +317,13 @@ func (h *Handler) RollbackEnvironment(c *fiber.Ctx) error {
 
 // DestroyEnvironment godoc
 // @Summary Destroy an environment
-// @Description Remove its containers and hostnames; purge=true also deletes volumes
+// @Description Remove its containers and hostnames; purge=true also deletes volumes. Backups are kept unless delete_backups=true.
 // @Tags apps
 // @Produce json
 // @Param app path string true "App name"
 // @Param env path string true "Environment name"
 // @Param purge query bool false "Also delete volumes"
+// @Param delete_backups query bool false "Also delete its backups"
 // @Success 200 {object} interface{}
 // @Router /apps/{app}/{env} [delete]
 func (h *Handler) DestroyEnvironment(c *fiber.Ctx) error {
@@ -338,7 +339,7 @@ func (h *Handler) DestroyEnvironment(c *fiber.Ctx) error {
 		return c.Status(409).JSON(fiber.Map{"error": "a deployment is in progress"})
 	}
 
-	if err := h.deployer.Destroy(env, c.QueryBool("purge", false)); err != nil {
+	if err := h.deployer.Destroy(env, c.QueryBool("purge", false), c.QueryBool("delete_backups", false)); err != nil {
 		logger.Error(err, fmt.Sprintf("Failed to destroy %s/%s", env.App, env.Name))
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

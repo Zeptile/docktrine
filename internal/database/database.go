@@ -141,6 +141,8 @@ func (db *DB) createTables() error {
 			npm_id INTEGER NOT NULL
 		)`,
 		updateChecksTable,
+		backupsTable,
+		backupsIndex,
 	}
 
 	for _, query := range queries {

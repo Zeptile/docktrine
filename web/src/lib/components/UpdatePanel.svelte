@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, ApiError, type UpdateInfo } from "$lib/api";
+  import { api, ApiError, type UpdateInfo, type BackupPolicy } from "$lib/api";
   import { timeAgo } from "$lib/format";
   import { can } from "$lib/session";
   import { toast } from "$lib/toast";
@@ -17,12 +17,14 @@
     variant: "panel" | "line";
     // A deployment is in progress
     busy?: boolean;
+    // When the environment backs up its volumes; "setup" unless set
+    backupBefore?: BackupPolicy;
     onupdate: () => void;
     // The check finished; the page reloads to show it
     onchecked: () => void;
   }
 
-  let { app, env, update, variant, busy = false, onupdate, onchecked }: Props = $props();
+  let { app, env, update, variant, busy = false, backupBefore = "setup", onupdate, onchecked }: Props = $props();
 
   let checking = $state(false);
   let error = $state<string | null>(null);
@@ -105,6 +107,11 @@
       <Alert kind="warning" class="mt-4">
         Updating runs the setup command again, <code class="font-mono text-[12.5px]">{update.setup}</code>{update.git?.update ? ", since the commit changes" : ""}.
         It may migrate data, which rolling back doesn't undo.
+        {#if backupBefore === "never"}
+          Backups are off for this environment, so nothing is saved first.
+        {:else}
+          The volumes are backed up first, so the Backups tab can restore them.
+        {/if}
       </Alert>
     {/if}
     {#if error}<Alert class="mt-4">{error}</Alert>{/if}

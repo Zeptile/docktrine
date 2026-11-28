@@ -65,6 +65,9 @@ func main() {
 	if err := db.FailStaleDeployments(); err != nil {
 		logger.Fatal(err, "Failed to clean up interrupted deployments")
 	}
+	if err := db.FailStaleBackups(); err != nil {
+		logger.Fatal(err, "Failed to clean up interrupted backups")
+	}
 
 	box, err := secrets.LoadBox(database.DataPath())
 	if err != nil {
@@ -184,6 +187,10 @@ func main() {
 	apps.Get("/:app/:env/secrets", handler.ListSecrets)
 	apps.Put("/:app/:env/secrets", canDeploy, handler.SetSecrets)
 	apps.Delete("/:app/:env/secrets/:key", canDeploy, handler.DeleteSecret)
+	apps.Get("/:app/:env/backups", handler.ListBackups)
+	apps.Post("/:app/:env/backups", canDeploy, handler.CreateBackup)
+	apps.Post("/:app/:env/backups/:id/restore", canDeploy, handler.RestoreBackup)
+	apps.Delete("/:app/:env/backups/:id", canDeploy, handler.DeleteBackup)
 	
 	api.All("/*", func(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{
