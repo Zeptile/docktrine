@@ -4,7 +4,9 @@ package secrets
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -14,6 +16,8 @@ import (
 
 type Box struct {
 	aead cipher.AEAD
+	// For Fingerprint; the key itself isn't kept
+	mac []byte
 }
 
 // LoadBox reads the master key from DOCKTRINE_SECRET_KEY (64 hex chars),
@@ -52,7 +56,18 @@ func LoadBox(dataPath string) (*Box, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Box{aead: aead}, nil
+	m := hmac.New(sha256.New, key)
+	m.Write([]byte("docktrine fingerprint key"))
+	return &Box{aead: aead, mac: m.Sum(nil)}, nil
+}
+
+// Fingerprint returns a short id for this installation, stable as long as
+// its master key is, and different for each purpose. It reveals nothing
+// about the key, so it can go where anyone can read it, like a label.
+func (b *Box) Fingerprint(purpose string) string {
+	m := hmac.New(sha256.New, b.mac)
+	m.Write([]byte(purpose))
+	return hex.EncodeToString(m.Sum(nil))[:16]
 }
 
 func (b *Box) Encrypt(plaintext string) ([]byte, error) {

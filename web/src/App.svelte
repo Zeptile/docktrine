@@ -10,6 +10,7 @@
   import Login from "./lib/components/Login.svelte";
   import Invite from "./lib/components/Invite.svelte";
   import GoTo from "./lib/components/GoTo.svelte";
+  import Shell from "./lib/components/Shell.svelte";
   import Logo from "./lib/components/ui/Logo.svelte";
   import ConfirmDialog from "./lib/components/ui/ConfirmDialog.svelte";
   import Toaster from "./lib/components/ui/Toaster.svelte";
@@ -20,12 +21,13 @@
 
   // Routes: #/apps, #/apps/<app>/<env>[/<tab>], #/apps/<app>/<env>/configure,
   // #/launch[/<catalog entry>], #/activity, #/containers, #/servers,
-  // #/users, #/account, #/invite/<token>
+  // #/users, #/account, #/shell/<server>[/<container>], #/invite/<token>
   type Route =
     | { page: "apps" | "activity" | "containers" | "servers" | "users" | "account" }
     | { page: "launch"; preset?: string }
     | { page: "environment"; app: string; env: string; tab?: string }
     | { page: "configure"; app: string; env: string }
+    | { page: "shell"; server: string; container?: string }
     | { page: "invite"; token: string };
 
   const simplePages = ["apps", "launch", "activity", "containers", "servers", "users", "account"] as const;
@@ -59,7 +61,13 @@
     invite: "Welcome aboard",
   };
 
-  let active = $derived(route.page === "environment" || route.page === "configure" || route.page === "launch" ? "apps" : route.page);
+  let active = $derived(
+    route.page === "environment" || route.page === "configure" || route.page === "launch"
+      ? "apps"
+      : route.page === "shell"
+        ? route.container ? "containers" : "servers"
+        : route.page
+  );
   let themeLabel = $derived(themes.find((t) => t.id === $theme)?.label);
 
   $effect(() => {
@@ -68,7 +76,9 @@
         ? `${route.app}/${route.env} · Docktrine`
         : route.page === "configure"
           ? `Configure ${route.app}/${route.env} · Docktrine`
-          : `${titles[route.page]} · Docktrine`;
+          : route.page === "shell"
+            ? `Shell on ${route.server} · Docktrine`
+            : `${titles[route.page]} · Docktrine`;
   });
 
   function parse(hash: string): Route {
@@ -81,6 +91,7 @@
     }
     if (parts[0] === "invite" && parts[1]) return { page: "invite", token: parts[1] };
     if (parts[0] === "launch") return { page: "launch", preset: parts[1] || undefined };
+    if (parts[0] === "shell" && parts[1]) return { page: "shell", server: parts[1], container: parts[2] || undefined };
     const page = simplePages.find((p) => p === parts[0]);
     return { page: page ?? "apps" };
   }
@@ -100,7 +111,9 @@
     const onUnauthorized = () => me.set(null);
     const onHashChange = () => (route = parse(location.hash));
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && $me) {
+      // In a terminal, Ctrl+K belongs to the shell (kill to end of line)
+      const inTerminal = e.target instanceof Element && e.target.closest(".xterm");
+      if ((e.metaKey || (e.ctrlKey && !inTerminal)) && e.key.toLowerCase() === "k" && $me) {
         e.preventDefault();
         goTo = !goTo;
       }
@@ -223,6 +236,10 @@
       <Users />
     {:else if route.page === "account"}
       <Account />
+    {:else if route.page === "shell"}
+      {#key `${route.server}/${route.container ?? ""}`}
+        <Shell server={route.server} container={route.container} />
+      {/key}
     {/if}
   </main>
 

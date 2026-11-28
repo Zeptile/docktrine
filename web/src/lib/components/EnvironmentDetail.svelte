@@ -27,6 +27,7 @@
     GitBranch,
     Clock,
     SlidersHorizontal,
+    SquareTerminal,
   } from "lucide-svelte";
 
   export let app: string;
@@ -34,10 +35,11 @@
   // From the URL: #/apps/<app>/<env>/<tab>
   export let tab: string | undefined = undefined;
 
-  const tabs = [
+  $: tabs = [
     { id: "history", label: "Deployments" },
     { id: "logs", label: "Logs" },
     { id: "secrets", label: "Secrets" },
+    ...($can("deployer") ? [{ id: "shell", label: "Shell" }] : []),
   ];
   $: activeTab = tabs.some((t) => t.id === tab) ? tab : "history";
   $: base = `#/apps/${encodeURIComponent(app)}/${encodeURIComponent(env)}`;
@@ -56,6 +58,22 @@
   let destroyPurge = false;
 
   let timer: ReturnType<typeof setTimeout> | undefined;
+
+  // The container the Shell tab opens a shell in, by default the first
+  // running one; a redeploy replaces it with its successor
+  let shellContainer: string | null = null;
+  $: running = (detail?.containers ?? []).filter((c) => c.state === "running");
+  $: if (running.length && !running.some((c) => c.id === shellContainer)) shellContainer = running[0].id;
+  $: shellTarget = running.find((c) => c.id === shellContainer);
+
+  // xterm is big; load it only once the Shell tab opens
+  let loadConsole: Promise<typeof import("./Console.svelte")> | null = null;
+  $: if (activeTab === "shell" && !loadConsole) loadConsole = import("./Console.svelte");
+
+  function openShell(id: string) {
+    shellContainer = id;
+    location.hash = `${base}/shell`;
+  }
 
   $: environment = detail?.environment;
   $: deployments = detail?.deployments ?? [];
@@ -307,6 +325,16 @@
                 <StatusBadge status={containerStatus(c.state)} label={false} />
                 <span class="truncate" title={c.image}>{c.service ?? c.name}</span>
                 <span class="ml-auto text-xs text-muted-foreground shrink-0">{c.status}</span>
+                {#if $can("deployer") && c.state === "running"}
+                  <button
+                    class="shrink-0 -my-1 h-7 w-7 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+                    title="Open a shell in {c.service ?? c.name}"
+                    aria-label="Open a shell in {c.service ?? c.name}"
+                    onclick={() => openShell(c.id)}
+                  >
+                    <SquareTerminal class="w-3.5 h-3.5" />
+                  </button>
+                {/if}
               </li>
             {/each}
           </ul>
@@ -406,6 +434,40 @@
     <LogsPanel {app} {env} />
   {:else if activeTab === "secrets"}
     <SecretsPanel {app} {env} required={current?.spec?.secrets ?? []} />
+  {:else if activeTab === "shell" && environment}
+    {#if detail.containers_error}
+      <Alert>Couldn't reach {environment.server}: {detail.containers_error}</Alert>
+    {:else if !shellTarget}
+      <p class="text-sm text-muted-foreground">Nothing of {env} is running, so there's nowhere to open a shell.</p>
+    {:else}
+      {#if running.length > 1}
+        <div class="flex flex-wrap items-center gap-3 mb-4">
+          <label for="shell-container" class="text-sm font-medium">Open in</label>
+          <select id="shell-container" bind:value={shellContainer} class="input w-auto max-w-full">
+            {#each running as c (c.id)}
+              <option value={c.id}>{c.service ? `${c.service}, ${c.name}` : c.name}</option>
+            {/each}
+          </select>
+        </div>
+      {/if}
+      {#await loadConsole}
+        <Loading label="Loading the terminal" />
+      {:then module}
+        {#if module}
+          {#key `${environment.server}/${shellTarget.id}`}
+            <module.default
+              target={{ kind: "container", server: environment.server, id: shellTarget.id }}
+              label="{shellTarget.service ?? shellTarget.name} on {environment.server}"
+              class="h-[34rem]"
+            />
+          {/key}
+        {/if}
+      {/await}
+      <p class="hint">
+        The shell ends when you leave this tab, and after 30 minutes without input.
+        <a href="#/shell/{encodeURIComponent(environment.server)}/{encodeURIComponent(shellTarget.id)}" class="text-link hover:underline">Open it full height</a>
+      </p>
+    {/if}
   {/if}
 
   {#if $can("deployer")}

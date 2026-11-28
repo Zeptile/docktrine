@@ -58,6 +58,9 @@ func Auth(db *database.DB) fiber.Handler {
 		if apiKey := c.Get("X-API-Key"); apiKey != "" {
 			return keyAuth(db, c, apiKey)
 		}
+		if apiKey := websocketKey(c.Get(fiber.HeaderSecWebSocketProtocol)); apiKey != "" {
+			return keyAuth(db, c, apiKey)
+		}
 		if token := c.Cookies(SessionCookie); token != "" {
 			return sessionAuth(db, c, token)
 		}
