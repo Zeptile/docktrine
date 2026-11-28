@@ -123,5 +123,5 @@ shows what changes. **Update** deploys the running settings again at the
 newest version, as an ordinary deployment with its log, and a rollback to
 go back. For a stack with a setup command, a new commit runs the command
 again, which the page warns about: a migration it runs isn't undone by
-rolling back. Before that, Docktrine backs up the volumes, as described in
-[Backups](operations.md#backups).
+rolling back. Unless backups are turned off for the environment, Docktrine
+[backs it up](operations.md#backups) first.

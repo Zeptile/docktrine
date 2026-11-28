@@ -14,7 +14,7 @@ or `--branch`.
 | `status` | What runs where, for this app. `--all` shows every app. |
 | `history <env>` | Deployments of an environment, newest first. |
 | `logs <env>` | Container logs. `-f` follows, `--tail N` limits lines. |
-| `rollback <env>` | Redeploy the previous successful version. |
+| `rollback <env>` | Redeploy the previous successful version, or the deployment given by `--to <id>`. |
 | `destroy <env>` | Remove containers and hostnames. `--purge` also deletes volumes. |
 | `secrets list\|set\|unset <env>` | See [Secrets](manifest.md#secrets). |
 | `servers list\|add\|update\|remove` | Manage nodes. |

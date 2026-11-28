@@ -19,11 +19,12 @@
   certificate. It removes them when the environment is destroyed. DNS must
   already point the hostnames at the gateway. A wildcard record such as
   `*.dev.zeptile.software` covers every app.
-- **Zero-downtime deploys.** The new container starts next to the old one.
-  The old one stops only after the new one passes its health check and the
-  ingress routes traffic to it. If either step fails, the new container is
-  removed and the old one keeps serving. A successful deploy means its
-  hostnames answer.
+- **Zero-downtime deploys.** For single-image apps, the new container starts
+  next to the old one. The old one stops only after the new one passes its
+  health check and the ingress routes traffic to it. If either step fails, the
+  new container is removed and the old one keeps serving. A successful deploy
+  means its hostnames answer. [Compose apps](manifest.md#compose-apps) briefly
+  stop each changed service instead.
 
 Containers that Docktrine creates carry `docktrine.app` and `docktrine.env`
 labels, so they are easy to tell apart from containers started by hand.

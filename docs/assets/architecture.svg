@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 420" role="img" aria-labelledby="t d" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
   <title id="t">Docktrine architecture</title>
-  <desc id="d">The CLI pushes images to a registry and calls the gateway. The gateway reaches each node over SSH and proxies visitors to the node's ingress, which routes to app containers.</desc>
+  <desc id="d">The CLI pushes images to a registry and calls the Docktrine server on the gateway. Docktrine deploys to each node over SSH, and Nginx Proxy Manager forwards visitors to the node's ingress, which routes to app containers.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0 0L10 5L0 10z" fill="#8e6522"/>
@@ -42,14 +42,15 @@
     <path d="M660 95H600"/>
     <path d="M140 140V270"/>
     <path d="M250 315H360"/>
-    <path d="M480 170V270"/>
+    <path d="M420 170V270"/>
+    <path d="M540 170V270"/>
   </g>
   <g fill="#5e4314" font-size="13" text-anchor="middle">
     <text x="305" y="84" font-size="12">HTTPS + API key</text>
     <text x="630" y="84">HTTPS</text>
     <text x="150" y="210" text-anchor="start">push</text>
     <text x="305" y="305">pull</text>
-    <text x="492" y="212" text-anchor="start">SSH + proxy</text>
-    <text x="492" y="228" text-anchor="start">hosts</text>
+    <text x="430" y="217" text-anchor="start">SSH: deploys</text>
+    <text x="550" y="217" text-anchor="start">HTTP: traffic</text>
   </g>
 </svg>
