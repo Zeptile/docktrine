@@ -66,7 +66,10 @@ docktrine rollback prod
 ## How it works
 
 <p align="center">
-  <img src="docs/assets/architecture.svg" alt="The CLI pushes images to a registry and calls the Docktrine server on the gateway. Docktrine deploys to each node over SSH, and Nginx Proxy Manager forwards visitors to the node's Traefik ingress." width="760">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-dark.svg">
+    <img src="docs/assets/architecture.svg" alt="The CLI pushes images to a registry and calls the Docktrine server on the gateway. Docktrine deploys to each node over SSH, and Nginx Proxy Manager forwards visitors to the node's Traefik ingress." width="760">
+  </picture>
 </p>
 
 A node reached over SSH needs only Docker and an SSH user: no agent and no
