@@ -30,7 +30,11 @@
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   $: backups = list?.backups ?? [];
-  $: running = backups.some((b) => b.status === "running") || !!list?.busy;
+  $: running = !!list && isRunning(list);
+
+  function isRunning(l: NonNullable<typeof list>): boolean {
+    return (l.backups ?? []).some((b) => b.status === "running") || !!l.busy;
+  }
   $: policy = current?.spec?.backup?.before ?? "setup";
   $: keep = current?.spec?.backup?.keep || list?.keep || 5;
   $: newestOk = backups.find((b) => b.status === "succeeded");
@@ -46,7 +50,9 @@
     } catch (e) {
       error = e instanceof ApiError ? e.message : "Couldn't load backups";
     }
-    if (running) timer = setTimeout(load, 1500);
+    // From the fresh list: the reactive `running` only updates after this
+    // function returns, so it would still say what the last load saw
+    if (list && isRunning(list)) timer = setTimeout(load, 1500);
   }
 
   async function backUpNow() {
