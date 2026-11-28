@@ -14,6 +14,7 @@ import (
 
 	"github.com/Zeptile/docktrine/internal/database"
 	"github.com/Zeptile/docktrine/internal/docker"
+	"github.com/Zeptile/docktrine/internal/manifest"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
@@ -46,6 +47,10 @@ func (d *Deployer) deployImage(ctx context.Context, t target, log *deployLog) er
 	log.Printf("Pulling %s", t.spec.Image)
 	if err := pullImage(ctx, cli, t.spec.Image, d.registryAuth(t.spec.Image)); err != nil {
 		return fmt.Errorf("pulling %s: %w", t.spec.Image, err)
+	}
+
+	if err := d.backupBeforeImage(ctx, cli, t, log); err != nil {
+		return err
 	}
 
 	if err := ensureNetwork(ctx, cli); err != nil {
@@ -120,6 +125,33 @@ func (d *Deployer) deployImage(ctx context.Context, t target, log *deployLog) er
 	}
 
 	return removePrevious(ctx, cli, t, log, routed)
+}
+
+// backupBeforeImage backs up an image's volumes before a deploy that
+// changes the version, when the environment asks for it. Images have no
+// setup command, so the default never backs up here.
+func (d *Deployer) backupBeforeImage(ctx context.Context, cli *client.Client, t target, log *deployLog) error {
+	if t.backupPolicy() != manifest.BackupBeforeUpgrade {
+		return nil
+	}
+	running, err := d.runningDeployment(t.spec.App, t.spec.Environment)
+	if err != nil || running == nil {
+		return err
+	}
+	reason := versionChange(running.Spec, t.spec)
+	if reason == "" {
+		containers, err := listWorkload(ctx, cli, t.spec.App, t.spec.Environment)
+		if err != nil {
+			return err
+		}
+		if newer := newerImages(ctx, cli, containers); len(newer) > 0 {
+			reason = describeNewer(newer)
+		}
+	}
+	if reason == "" {
+		return nil
+	}
+	return d.backupBeforeDeploy(ctx, cli, t, reason, log)
 }
 
 func pullImage(ctx context.Context, cli *client.Client, ref, auth string) error {

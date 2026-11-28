@@ -24,7 +24,9 @@ export default defineConfig({
     port: 5173,
     host: true,
     proxy: {
-      "/api": process.env.DOCKTRINE_API_PROXY ?? "http://localhost:3000",
+      // ws: shells are WebSockets. Host is passed through unchanged, which
+      // the API's same-origin check on them relies on.
+      "/api": { target: process.env.DOCKTRINE_API_PROXY ?? "http://localhost:3000", ws: true },
     },
   },
 });

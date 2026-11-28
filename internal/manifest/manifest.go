@@ -52,6 +52,7 @@ type Environment struct {
 	Command     []string          `yaml:"command,omitempty"`
 	Healthcheck string            `yaml:"healthcheck,omitempty"`
 	TTL         string            `yaml:"ttl,omitempty"`
+	Backup      *Backup           `yaml:"backup,omitempty"`
 }
 
 // GitSource is a compose stack read from a Git repository at deploy time,
@@ -118,6 +119,45 @@ type Setup struct {
 	Force bool `json:"force,omitempty"`
 }
 
+// When a deploy backs up the environment's volumes first.
+const (
+	// Before a setup command runs, since the migrations it runs can't be
+	// undone by rolling back
+	BackupBeforeSetup = "setup"
+	// Also before a deploy that changes the version: another image or
+	// digest, or another commit of a stack from Git
+	BackupBeforeUpgrade = "upgrade"
+	BackupNever         = "never"
+)
+
+// Backup says when deploys back up an environment's volumes, and how many
+// backups to keep. Leaving it out backs up before setup commands.
+type Backup struct {
+	Before string `yaml:"before,omitempty" json:"before,omitempty"`
+	// How many backups to keep; the server's default when 0
+	Keep int `yaml:"keep,omitempty" json:"keep,omitempty"`
+}
+
+func (b *Backup) Validate() error {
+	switch b.Before {
+	case "", BackupBeforeSetup, BackupBeforeUpgrade, BackupNever:
+	default:
+		return fmt.Errorf("backup.before must be setup, upgrade or never")
+	}
+	if b.Keep < 0 || b.Keep > 100 {
+		return fmt.Errorf("backup.keep must be between 1 and 100, or 0 for the server's default")
+	}
+	return nil
+}
+
+// BackupBefore is when deploys of s back up first, with the default filled in.
+func (s *Spec) BackupBefore() string {
+	if s.Backup == nil || s.Backup.Before == "" {
+		return BackupBeforeSetup
+	}
+	return s.Backup.Before
+}
+
 // Origins of a Spec. The CLI leaves it empty.
 const OriginUI = "ui"
 
@@ -141,6 +181,7 @@ type Spec struct {
 	Preview     bool              `json:"preview,omitempty"`
 	Branch      string            `json:"branch,omitempty"`
 	TTL         string            `json:"ttl,omitempty"`
+	Backup      *Backup           `json:"backup,omitempty"`
 	// "ui" for apps launched from the web UI, which docktrine.yaml doesn't describe
 	Origin string `json:"origin,omitempty"`
 }
@@ -203,6 +244,11 @@ func (m *Manifest) Validate() error {
 		if len(env.Hostnames) > 0 && env.Port == 0 && m.Compose == "" {
 			return fmt.Errorf("environments.%s.port is required when hostnames are set", name)
 		}
+		if env.Backup != nil {
+			if err := env.Backup.Validate(); err != nil {
+				return fmt.Errorf("environments.%s.%w", name, err)
+			}
+		}
 		if env.TTL != "" {
 			if name != PreviewEnvironment {
 				return fmt.Errorf("environments.%s.ttl is only valid for the preview environment", name)
@@ -253,6 +299,7 @@ func (m *Manifest) Resolve(envName, branch, image string) (*Spec, error) {
 		Volumes:     env.Volumes,
 		Command:     env.Command,
 		Healthcheck: env.Healthcheck,
+		Backup:      env.Backup,
 	}
 
 	if m.Compose != "" {
@@ -325,6 +372,11 @@ func (s *Spec) Validate() error {
 		}
 		if strings.TrimSpace(s.Setup.Command) == "" || len(s.Setup.Command) > 4096 {
 			return fmt.Errorf("the setup command must be between 1 and 4096 characters")
+		}
+	}
+	if s.Backup != nil {
+		if err := s.Backup.Validate(); err != nil {
+			return err
 		}
 	}
 	if s.Port < 0 || s.Port > 65535 {

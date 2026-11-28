@@ -8,7 +8,7 @@
   import Button from "./ui/Button.svelte";
   import Alert from "./ui/Alert.svelte";
   import Loading from "./ui/Loading.svelte";
-  import { Plus, Trash2, Activity, Network, Eraser, Pencil, RefreshCw } from "lucide-svelte";
+  import { Plus, Trash2, Activity, Network, Eraser, Pencil, RefreshCw, SquareTerminal } from "lucide-svelte";
 
   type Panel = "edit" | "ingress" | "prune" | null;
 
@@ -298,6 +298,13 @@
                 <Button size="sm" variant={panel[server.name] === "prune" ? "secondary" : "outline"} onclick={() => toggle(server, "prune")} aria-expanded={panel[server.name] === "prune"}>
                   <Eraser /> Prune
                 </Button>
+                <a
+                  href="#/shell/{encodeURIComponent(server.name)}"
+                  class="inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-md text-[13px] font-medium border border-input bg-card hover:bg-muted hover:border-foreground/30 [&_svg]:size-4"
+                  title="A root shell on {server.name}"
+                >
+                  <SquareTerminal /> Shell
+                </a>
                 {/if}
               </div>
             </div>

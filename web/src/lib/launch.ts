@@ -184,6 +184,9 @@ export interface VarRow {
   stack?: import("./api").StackVariable;
   // Already stored on the server; left blank, it keeps its value
   stored?: boolean;
+  // Set by a catalog preset: what it's for, whether the app needs it, how
+  // to generate it, and a value that follows the first hostname
+  preset?: import("./api").PresetVariable;
 }
 
 let nextRow = 1;
@@ -195,6 +198,37 @@ export function newRow(fields: Partial<VarRow> = {}): VarRow {
 // Whether a stack variable needs someone to look at it: compose refuses to
 // start without it, or nothing gives it a value
 export function needsValue(row: VarRow): boolean {
-  if (!row.stack) return true;
+  if (!row.stack || row.preset?.required) return true;
   return !!row.stack.required || (!row.stack.has_default && !row.stack.suggested);
+}
+
+// Whether the app can't start without a value: compose says so, or the
+// catalog does
+export function isRequired(row: VarRow): boolean {
+  return !!row.stack?.required || !!row.preset?.required;
+}
+
+// "https://{hostname}" with the first hostname, or "" without one
+export function fromHostname(template: string, hostnames: string[]): string {
+  return hostnames[0] ? template.split("{hostname}").join(hostnames[0]) : "";
+}
+
+// As the preflight checks write it: 14 GB, 6.8 GB, 512 MB
+function formatMB(mb: number): string {
+  if (mb < 1024) return `${mb} MB`;
+  const gb = mb / 1024;
+  return `${Number.isInteger(gb) || gb >= 10 ? Math.round(gb) : gb.toFixed(1)} GB`;
+}
+
+// "14 GB, 4 CPUs; 6.8 GB with COMPOSE_PROFILES=errors-only", for the picker
+export function describeRequirements(r: import("./api").Requirements | undefined): string {
+  const variants = r?.variants ?? [];
+  const base = variants.find((v) => !v.when);
+  if (!base?.memory_mb) return "";
+  let text = formatMB(base.memory_mb);
+  if (base.cpus) text += `, ${base.cpus} ${base.cpus === 1 ? "CPU" : "CPUs"}`;
+  for (const v of variants) {
+    if (v.when && v.memory_mb) text += `; ${formatMB(v.memory_mb)} with ${v.when.variable}${v.when.not ? "≠" : "="}${v.when.value}`;
+  }
+  return text;
 }

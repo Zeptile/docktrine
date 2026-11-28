@@ -129,6 +129,31 @@ func (d *Deployer) deployCompose(ctx context.Context, t target, log *deployLog) 
 		"DOCKER_CONFIG="+filepath.Join(work, "config"),
 	)
 
+	cli, err := connect(t.server)
+	if err != nil {
+		return err
+	}
+	defer cli.Close()
+
+	// A backup, when this deploy calls for one, comes before anything on
+	// the node changes, the stack's files included
+	running, err := d.runningDeployment(t.spec.App, t.spec.Environment)
+	if err != nil {
+		return err
+	}
+	var runningSpec *manifest.Spec
+	if running != nil {
+		runningSpec = running.Spec
+	}
+	backedUp := false
+	backup := func(reason string) error {
+		if reason == "" || backedUp {
+			return nil
+		}
+		backedUp = true
+		return d.backupBeforeDeploy(ctx, cli, t, reason, log)
+	}
+
 	waitTimeout := "120"
 	if t.spec.Source != nil {
 		nodeDir := StacksDir() + "/" + t.project()
@@ -141,12 +166,17 @@ func (d *Deployer) deployCompose(ctx context.Context, t target, log *deployLog) 
 			return err
 		}
 
-		log.Printf("Copying the stack's files to %s on %s", nodeDir, t.server.Name)
-		cli, err := connect(t.server)
-		if err != nil {
+		setupWhy := ""
+		if t.spec.Setup != nil {
+			if setupWhy, err = d.setupReason(t.spec, t.deploymentID); err != nil {
+				return err
+			}
+		}
+		if err := backup(backupReason(t.backupPolicy(), setupWhy, versionChange(runningSpec, t.spec))); err != nil {
 			return err
 		}
-		defer cli.Close()
+
+		log.Printf("Copying the stack's files to %s on %s", nodeDir, t.server.Name)
 		// The .env goes too: setup commands read it, and so does running
 		// `docker compose` by hand on the node. It is only readable by root,
 		// and holds nothing the containers' own environment doesn't.
@@ -155,11 +185,7 @@ func (d *Deployer) deployCompose(ctx context.Context, t target, log *deployLog) 
 		}
 
 		if t.spec.Setup != nil {
-			reason, err := d.setupReason(t.spec, t.deploymentID)
-			if err != nil {
-				return err
-			}
-			if reason == "" {
+			if reason := setupWhy; reason == "" {
 				log.Printf("Skipping the setup command: it already ran for %s", short(t.spec.Source.Commit))
 			} else {
 				// The command runs where the compose file is, on the node
@@ -192,11 +218,25 @@ func (d *Deployer) deployCompose(ctx context.Context, t target, log *deployLog) 
 		if t.spec.Setup != nil {
 			waitTimeout = "600"
 		}
+	} else if err := backup(backupReason(t.backupPolicy(), "", versionChange(runningSpec, t.spec))); err != nil {
+		return err
 	}
 
 	log.Printf("Pulling images")
 	if err := runLogged(ctx, log, environ, append(base, "pull", "--ignore-buildable")...); err != nil {
 		return fmt.Errorf("docker compose pull: %w", err)
+	}
+	// A tag such as latest may have moved on, which only pulling tells
+	if t.backupPolicy() == manifest.BackupBeforeUpgrade && !backedUp {
+		containers, err := environmentContainers(ctx, cli, t.spec.App, t.spec.Environment)
+		if err != nil {
+			return err
+		}
+		if newer := newerImages(ctx, cli, containers); len(newer) > 0 {
+			if err := backup(describeNewer(newer)); err != nil {
+				return err
+			}
+		}
 	}
 
 	log.Printf("Starting services")

@@ -9,7 +9,7 @@
   import Alert from "./ui/Alert.svelte";
   import Loading from "./ui/Loading.svelte";
   import Readouts from "./ui/Readouts.svelte";
-  import { Play, Square, RotateCcw, RefreshCw, Search } from "lucide-svelte";
+  import { Play, Square, RotateCcw, RefreshCw, Search, SquareTerminal } from "lucide-svelte";
 
   type State = "all" | "running" | "unhealthy" | "crashed" | "stopped" | "docktrine";
   type Grouping = "owner" | "server" | "none";
@@ -333,6 +333,16 @@
                 {/if}
                 {#if $can("deployer")}
                   <td class="pr-1 text-right whitespace-nowrap">
+                    {#if c.status === "running"}
+                      <a
+                        href="#/shell/{encodeURIComponent(c.server)}/{encodeURIComponent(c.id)}"
+                        class="inline-flex items-center justify-center h-8 px-2.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground [&_svg]:size-4"
+                        title="Open a shell"
+                        aria-label="Open a shell in {name(c)}"
+                      >
+                        <SquareTerminal />
+                      </a>
+                    {/if}
                     {#if c.status === "running" || c.status === "restarting"}
                       <Button size="sm" variant="ghost" disabled={busy[c.id]} title="Restart" aria-label="Restart {name(c)}"
                         onclick={() => act(c, "restarted", () => api.containers.restart(c.id, c.server || undefined))}>

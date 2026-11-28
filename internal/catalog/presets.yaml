@@ -1,0 +1,255 @@
+# Known apps for the launch form. Each entry fills the form; everything stays
+# editable there. To add one, copy an entry of the same kind, pin it to a
+# released tag (not latest or main), launch it once, and run
+# `DOCKTRINE_CATALOG_LIVE=1 go test ./internal/catalog/` to check it against
+# the real repository or registry.
+#
+# Fields: see Preset in catalog.go. In short:
+#   kind: image | git | compose
+#   image + port + volumes        for image
+#   source (repo, ref, path)      for git, with an optional setup command
+#   compose                       for compose, the file's text
+#   expose (service, port)        for git and compose: where hostnames route
+#   variables: name, value, description, required, secret,
+#     generate: {kind: alnum | hex | base64, length}  for random secrets;
+#       alnum and hex count characters, base64 counts random bytes
+#     from_hostname: "https://{hostname}"  filled from the first hostname
+#   requirements: memory_mb and cpus, for the preflight checks
+#   notes: short sentences shown with the entry
+
+presets:
+  - id: uptime-kuma
+    name: Uptime Kuma
+    description: Monitors websites, ports and services, and alerts when they go down.
+    homepage: https://github.com/louislam/uptime-kuma
+    kind: image
+    version: "2.5.12"
+    image: louislam/uptime-kuma:2.5.12
+    port: 3001
+    volumes:
+      - data:/app/data
+    requirements:
+      variants:
+        - memory_mb: 512
+          cpus: 1
+    notes:
+      - Uptime Kuma keeps its data in /app/data, which the volume keeps across deploys.
+      - The first visit asks for the database to use (the built-in SQLite is fine) and then for the admin account. Do it right after launching.
+
+  - id: n8n
+    name: n8n
+    description: Workflow automation with a visual editor, webhooks and hundreds of integrations.
+    homepage: https://n8n.io
+    kind: image
+    version: "2.49.8"
+    image: n8nio/n8n:2.49.8
+    port: 5678
+    volumes:
+      - data:/home/node/.n8n
+    variables:
+      - name: N8N_ENCRYPTION_KEY
+        description: Encrypts the credentials n8n stores. Keep it; changing it makes them unreadable.
+        required: true
+        secret: true
+        generate: { kind: alnum, length: 40 }
+      - name: WEBHOOK_URL
+        description: The public address, for the webhook URLs n8n shows.
+        from_hostname: "https://{hostname}/"
+      - name: N8N_PROXY_HOPS
+        value: "1"
+        description: Trust one proxy in front, the gateway, for client addresses.
+    requirements:
+      variants:
+        - memory_mb: 1024
+          cpus: 1
+    notes:
+      - n8n keeps workflows and credentials in SQLite under /home/node/.n8n, in the volume.
+      - Its sign-in cookie needs HTTPS, so open it through a hostname. Without one, set N8N_SECURE_COOKIE to false.
+      - The first visit asks you to create the owner account.
+
+  - id: gitea
+    name: Gitea
+    description: Git hosting with pull requests, issues, packages and CI.
+    homepage: https://about.gitea.com
+    kind: image
+    version: "28.4.0"
+    image: gitea/gitea:28.4.0
+    port: 3000
+    volumes:
+      - data:/data
+    variables:
+      - name: GITEA__database__DB_TYPE
+        value: sqlite3
+        description: SQLite in the data volume. Set postgres or mysql, with the other GITEA__database__ settings, to use a server.
+      - name: GITEA__server__ROOT_URL
+        description: The public address, for clone URLs and links in emails.
+        from_hostname: "https://{hostname}/"
+      - name: GITEA__server__DOMAIN
+        from_hostname: "{hostname}"
+      - name: GITEA__security__SECRET_KEY
+        description: Encrypts secrets Gitea stores, like two-factor keys. Keep it.
+        required: true
+        secret: true
+        generate: { kind: alnum, length: 64 }
+      - name: GITEA__security__INTERNAL_TOKEN
+        description: Gitea's own processes use it to talk to each other.
+        required: true
+        secret: true
+        generate: { kind: alnum, length: 64 }
+    requirements:
+      variants:
+        - memory_mb: 512
+          cpus: 1
+    notes:
+      - Gitea keeps repositories, its config and its SQLite database in /data, in the volume.
+      - The first visit shows Gitea's install page with these settings filled in. Create the admin account there, right after launching.
+      - Clone over HTTPS. SSH (port 22 in the container) isn't published.
+
+  - id: umami
+    name: Umami
+    description: Simple, privacy-friendly website analytics, with PostgreSQL.
+    homepage: https://umami.is
+    kind: compose
+    version: "3.5.0"
+    compose: |
+      services:
+        umami:
+          image: ghcr.io/umami-software/umami:3.5.0
+          expose:
+            - "3000"
+          environment:
+            DATABASE_URL: postgresql://umami:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/umami
+            APP_SECRET: ${APP_SECRET:?Set APP_SECRET}
+            TWO_FACTOR_ENCRYPTION_KEY: ${TWO_FACTOR_ENCRYPTION_KEY:?Set TWO_FACTOR_ENCRYPTION_KEY}
+          depends_on:
+            db:
+              condition: service_healthy
+          init: true
+          restart: always
+          healthcheck:
+            test: ["CMD-SHELL", "curl -fs http://localhost:3000/api/heartbeat"]
+            interval: 5s
+            timeout: 5s
+            retries: 10
+        db:
+          image: postgres:15-alpine
+          environment:
+            POSTGRES_DB: umami
+            POSTGRES_USER: umami
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+          volumes:
+            - db-data:/var/lib/postgresql/data
+          restart: always
+          healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+            interval: 5s
+            timeout: 5s
+            retries: 10
+      volumes:
+        db-data:
+    expose:
+      service: umami
+      port: 3000
+    variables:
+      - name: POSTGRES_PASSWORD
+        description: The database's password. Hex, since it goes into a connection URL.
+        required: true
+        secret: true
+        generate: { kind: hex, length: 32 }
+      - name: APP_SECRET
+        description: Signs sign-in tokens.
+        required: true
+        secret: true
+        generate: { kind: hex, length: 64 }
+      - name: TWO_FACTOR_ENCRYPTION_KEY
+        description: Encrypts two-factor keys; 64 hex characters.
+        required: true
+        secret: true
+        generate: { kind: hex, length: 64 }
+    requirements:
+      variants:
+        - memory_mb: 1024
+          cpus: 1
+    notes:
+      - This is Umami's own compose file with the image pinned, its secrets as variables, and no port published on the server.
+      - Sign in as admin with the password umami, and change it straight away.
+
+  - id: plausible
+    name: Plausible
+    description: Lightweight, cookie-free website analytics, with PostgreSQL and ClickHouse.
+    homepage: https://plausible.io
+    kind: git
+    version: "3.2.2"
+    source:
+      repo: https://github.com/plausible/community-edition
+      ref: v3.2.2
+    expose:
+      service: plausible
+      port: 8000
+    variables:
+      - name: BASE_URL
+        description: The address people open Plausible at, with https://. It must match the hostname, or sign-in breaks.
+        required: true
+        from_hostname: "https://{hostname}"
+      - name: SECRET_KEY_BASE
+        description: Signs sessions and cookies; 64 characters or more.
+        required: true
+        secret: true
+        generate: { kind: base64, length: 48 }
+      - name: TOTP_VAULT_KEY
+        description: Encrypts two-factor keys; 32 random bytes in base64. Derived from SECRET_KEY_BASE when left out.
+        secret: true
+        generate: { kind: base64, length: 32 }
+    requirements:
+      variants:
+        - memory_mb: 2048
+          cpus: 1
+    notes:
+      - Plausible needs BASE_URL to be the hostname you give it, with https://.
+      - The ref v3.2.2 is the project's release branch for that version; each release gets its own.
+      - ClickHouse needs 2 GB of memory or so, more as events add up.
+      - The first visit asks you to create the admin account. Later sign-ups need an invite.
+
+  - id: sentry
+    name: Sentry
+    description: Error tracking and performance monitoring, self-hosted with its install script.
+    homepage: https://develop.sentry.dev/self-hosted/
+    kind: git
+    version: "26.11.0"
+    source:
+      repo: https://github.com/getsentry/self-hosted
+      ref: 26.11.0
+    expose:
+      service: nginx
+      port: 80
+    setup: |-
+      ./install.sh --skip-user-creation --no-report-self-hosted-issues --apply-automatic-config-updates --skip-commit-check
+      docker compose run --rm web createuser --email "$SENTRY_ADMIN_EMAIL" --password "$SENTRY_ADMIN_PASSWORD" --superuser --no-input || echo "No user was created; it may exist already"
+    variables:
+      - name: COMPOSE_PROFILES
+        value: feature-complete
+        description: Set errors-only for error tracking alone, which needs half the memory and CPUs.
+      - name: SENTRY_ADMIN_EMAIL
+        description: The first user, created by the setup command. You sign in with it.
+        required: true
+      - name: SENTRY_ADMIN_PASSWORD
+        description: The first user's password.
+        required: true
+        secret: true
+        generate: { kind: alnum, length: 24 }
+      - name: LAUNCHPAD_RPC_SHARED_SECRET
+        description: Shared between Sentry and its launchpad service; the repository's default is "supersecret".
+        secret: true
+        generate: { kind: hex, length: 64 }
+    requirements:
+      source: install/_min-requirements.sh
+      variants:
+        - when: { variable: COMPOSE_PROFILES, value: errors-only }
+          memory_mb: 7000
+          cpus: 2
+        - memory_mb: 14000
+          cpus: 4
+    notes:
+      - Sentry needs 14 GB of memory and 4 CPUs, or 7 GB and 2 with COMPOSE_PROFILES=errors-only.
+      - The first install pulls 10 to 20 GB of images and takes 20 minutes or more; the deploy log shows its progress.
+      - It also publishes port 9000 on the server, as SENTRY_BIND. Set SENTRY_BIND to another port if 9000 is taken.

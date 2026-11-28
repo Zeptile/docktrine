@@ -4,9 +4,10 @@
     api,
     type EnvironmentDetail,
     type Deployment,
+    type BackupList,
     ApiError,
   } from "$lib/api";
-  import { timeAgo, timeUntil, duration, shortImage } from "$lib/format";
+  import { timeAgo, timeUntil, duration, shortImage, bytes } from "$lib/format";
   import { confirmAction } from "$lib/confirm";
   import { toast } from "$lib/toast";
   import { can } from "$lib/session";
@@ -17,6 +18,9 @@
   import Gauge from "./Gauge.svelte";
   import SecretsPanel from "./SecretsPanel.svelte";
   import LogsPanel from "./LogsPanel.svelte";
+  import UpdatePanel from "./UpdatePanel.svelte";
+  import { updateSummary } from "$lib/updates";
+  import BackupsPanel from "./BackupsPanel.svelte";
   import {
     ExternalLink,
     RefreshCw,
@@ -25,6 +29,7 @@
     GitBranch,
     Clock,
     SlidersHorizontal,
+    SquareTerminal,
   } from "lucide-svelte";
 
   export let app: string;
@@ -32,10 +37,12 @@
   // From the URL: #/apps/<app>/<env>/<tab>
   export let tab: string | undefined = undefined;
 
-  const tabs = [
+  $: tabs = [
     { id: "history", label: "Deployments" },
     { id: "logs", label: "Logs" },
     { id: "secrets", label: "Secrets" },
+    { id: "backups", label: "Backups" },
+    ...($can("deployer") ? [{ id: "shell", label: "Shell" }] : []),
   ];
   $: activeTab = tabs.some((t) => t.id === tab) ? tab : "history";
   $: base = `#/apps/${encodeURIComponent(app)}/${encodeURIComponent(env)}`;
@@ -52,8 +59,37 @@
   let showDestroy = false;
   let destroyConfirm = "";
   let destroyPurge = false;
+  // Backups outlive the environment unless these go too
+  let destroyBackups = false;
+  let backupList: BackupList | null = null;
+  $: keptBackups = backupList?.backups.filter((b) => b.status === "succeeded") ?? [];
+
+  async function openDestroy() {
+    showDestroy = true;
+    try {
+      backupList = await api.apps.backups.list(app, env);
+    } catch {
+      backupList = null;
+    }
+  }
 
   let timer: ReturnType<typeof setTimeout> | undefined;
+
+  // The container the Shell tab opens a shell in, by default the first
+  // running one; a redeploy replaces it with its successor
+  let shellContainer: string | null = null;
+  $: running = (detail?.containers ?? []).filter((c) => c.state === "running");
+  $: if (running.length && !running.some((c) => c.id === shellContainer)) shellContainer = running[0].id;
+  $: shellTarget = running.find((c) => c.id === shellContainer);
+
+  // xterm is big; load it only once the Shell tab opens
+  let loadConsole: Promise<typeof import("./Console.svelte")> | null = null;
+  $: if (activeTab === "shell" && !loadConsole) loadConsole = import("./Console.svelte");
+
+  function openShell(id: string) {
+    shellContainer = id;
+    location.hash = `${base}/shell`;
+  }
 
   $: environment = detail?.environment;
   $: deployments = detail?.deployments ?? [];
@@ -146,11 +182,30 @@
     if (ok) start(() => api.apps.rollback(app, env, d.id), "Rolling back");
   }
 
+  async function updateNow() {
+    const u = detail?.update;
+    if (!u || !current) return;
+    const policy = current.spec?.backup?.before ?? "setup";
+    let setup = "";
+    if (u.setup) {
+      setup = ` It runs the setup command again (${u.setup}), which may migrate data in a way rolling back doesn't undo.`;
+      setup += policy === "never" ? " Backups are off for this environment." : " The volumes are backed up first.";
+    } else if (policy === "upgrade") {
+      setup = " The volumes are backed up first.";
+    }
+    const ok = await confirmAction({
+      title: `Update ${env}?`,
+      message: `${updateSummary(u)}. Starts a new deployment of #${current.id} at the newest version, with the same settings.${setup}`,
+      confirmLabel: "Update",
+    });
+    if (ok) start(() => api.apps.update(app, env), "Updating");
+  }
+
   async function destroy() {
     acting = true;
     error = null;
     try {
-      await api.apps.destroy(app, env, destroyPurge);
+      await api.apps.destroy(app, env, destroyPurge, destroyBackups);
       toast(`${app}/${env} destroyed`);
       location.hash = "#/apps";
     } catch (e) {
@@ -238,6 +293,8 @@
     </Alert>
   {/if}
 
+  <UpdatePanel {app} {env} update={detail.update} backupBefore={current?.spec?.backup?.before ?? "setup"} variant="panel" busy={acting || active} onupdate={updateNow} onchecked={load} />
+
   <dl class="mt-8 grid md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)] riveted px-6 sm:px-8 md:divide-x divide-y md:divide-y-0">
     <div class="py-4 md:pr-6 min-w-0">
       <dt class="text-[13px] text-muted-foreground mb-1.5">Running</dt>
@@ -247,6 +304,9 @@
           <p class="text-sm text-muted-foreground mt-1">
             #{current.id}, deployed {timeAgo(current.created_at)}{current.created_by ? ` by ${current.created_by}` : ""}
           </p>
+          {#if detail.update_checkable}
+            <UpdatePanel {app} {env} update={detail.update} variant="line" busy={acting || active} onupdate={updateNow} onchecked={load} />
+          {/if}
         {:else}
           <p class="text-sm text-muted-foreground">Nothing yet.</p>
         {/if}
@@ -286,6 +346,16 @@
                 <StatusBadge status={containerStatus(c.state)} label={false} />
                 <span class="truncate" title={c.image}>{c.service ?? c.name}</span>
                 <span class="ml-auto text-xs text-muted-foreground shrink-0">{c.status}</span>
+                {#if $can("deployer") && c.state === "running"}
+                  <button
+                    class="shrink-0 -my-1 h-7 w-7 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+                    title="Open a shell in {c.service ?? c.name}"
+                    aria-label="Open a shell in {c.service ?? c.name}"
+                    onclick={() => openShell(c.id)}
+                  >
+                    <SquareTerminal class="w-3.5 h-3.5" />
+                  </button>
+                {/if}
               </li>
             {/each}
           </ul>
@@ -385,6 +455,53 @@
     <LogsPanel {app} {env} />
   {:else if activeTab === "secrets"}
     <SecretsPanel {app} {env} required={current?.spec?.secrets ?? []} />
+  {:else if activeTab === "shell" && environment}
+    {#if detail.containers_error}
+      <Alert>Couldn't reach {environment.server}: {detail.containers_error}</Alert>
+    {:else if !shellTarget}
+      <p class="text-sm text-muted-foreground">Nothing of {env} is running, so there's nowhere to open a shell.</p>
+    {:else}
+      {#if running.length > 1}
+        <div class="flex flex-wrap items-center gap-3 mb-4">
+          <label for="shell-container" class="text-sm font-medium">Open in</label>
+          <select id="shell-container" bind:value={shellContainer} class="input w-auto max-w-full">
+            {#each running as c (c.id)}
+              <option value={c.id}>{c.service ? `${c.service}, ${c.name}` : c.name}</option>
+            {/each}
+          </select>
+        </div>
+      {/if}
+      {#await loadConsole}
+        <Loading label="Loading the terminal" />
+      {:then module}
+        {#if module}
+          {#key `${environment.server}/${shellTarget.id}`}
+            <module.default
+              target={{ kind: "container", server: environment.server, id: shellTarget.id }}
+              label="{shellTarget.service ?? shellTarget.name} on {environment.server}"
+              class="h-[34rem]"
+            />
+          {/key}
+        {/if}
+      {/await}
+      <p class="hint">
+        The shell ends when you leave this tab, and after 30 minutes without input.
+        <a href="#/shell/{encodeURIComponent(environment.server)}/{encodeURIComponent(shellTarget.id)}" class="text-link hover:underline">Open it full height</a>
+      </p>
+    {/if}
+  {:else if activeTab === "backups"}
+    <BackupsPanel
+      {app}
+      {env}
+      {current}
+      server={environment?.server}
+      deploying={active}
+      onredeploy={(dep) => {
+        selectedId = dep.id;
+        location.hash = base;
+        load();
+      }}
+    />
   {/if}
 
   {#if $can("deployer")}
@@ -397,7 +514,7 @@
           <Button
             variant="ghost"
             class="text-destructive hover:text-destructive hover:bg-destructive/10"
-            onclick={() => (showDestroy = true)}
+            onclick={openDestroy}
             disabled={acting || active}
             title={active ? "Wait for the deployment in progress to finish" : undefined}
           >
@@ -409,12 +526,31 @@
           <h2 class="section-title">Destroy <span class="engraved text-lg font-normal">{app}/{env}</span></h2>
           <p class="text-sm text-muted-foreground mt-1 mb-5 max-w-2xl">
             Removes its containers from {environment?.server}, its hostnames from the gateway, and its deployment
-            history. Secrets are kept, so deploying {env} again picks them back up.
+            history. Secrets and backups are kept, so deploying {env} again picks them back up.
           </p>
           <label class="flex items-start gap-2.5 text-sm mb-5">
             <input type="checkbox" bind:checked={destroyPurge} class="w-4 h-4 mt-0.5 accent-[rgb(var(--danger))]" />
-            <span>Also delete its volumes. <span class="text-destructive">The data in them can't be recovered.</span></span>
+            <span>
+              Also delete its volumes.
+              {#if keptBackups.length && !destroyBackups}
+                <span class="text-muted-foreground">Its backups are kept, so the data can be restored by deploying {env} again.</span>
+              {:else}
+                <span class="text-destructive">The data in them can't be recovered.</span>
+              {/if}
+            </span>
           </label>
+          {#if backupList?.backups.length}
+            <label class="flex items-start gap-2.5 text-sm mb-5">
+              <input type="checkbox" bind:checked={destroyBackups} class="w-4 h-4 mt-0.5 accent-[rgb(var(--danger))]" />
+              <span>
+                Also delete its {backupList.backups.length === 1 ? "backup" : `${backupList.backups.length} backups`}
+                ({bytes(backupList.backups.reduce((n, b) => n + b.size, 0))} in <span class="font-mono text-[13px] break-all">{backupList.dir}</span>).
+                <span class="block hint mt-0.5">
+                  Otherwise they stay on {environment?.server}, and show up here again if {app}/{env} is deployed again.
+                </span>
+              </span>
+            </label>
+          {/if}
           <label for="destroy-confirm" class="label">Type <span class="font-mono">{env}</span> to confirm</label>
           <div class="flex flex-wrap gap-2 max-w-xl">
             <input id="destroy-confirm" bind:value={destroyConfirm} class="input font-mono flex-1 min-w-48" autocomplete="off" />

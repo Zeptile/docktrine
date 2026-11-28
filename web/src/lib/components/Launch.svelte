@@ -8,6 +8,11 @@
     type StackInfo,
     type ImageInfo,
     type Deployment,
+    type Check,
+    type PreflightRequest,
+    type Preset,
+    type Requirements,
+    type BackupPolicy,
   } from "$lib/api";
   import {
     isName,
@@ -20,6 +25,9 @@
     isEnvKey,
     commonDomain,
     newRow,
+    isRequired,
+    fromHostname,
+    describeRequirements,
     type VarRow,
   } from "$lib/launch";
   import { toast } from "$lib/toast";
@@ -29,15 +37,18 @@
   import Loading from "./ui/Loading.svelte";
   import VariablesEditor from "./launch/VariablesEditor.svelte";
   import HostnamesInput from "./launch/HostnamesInput.svelte";
-  import { Box, GitBranch, FileCode, X, LoaderCircle, CircleCheck, Rocket, HardDrive } from "lucide-svelte";
+  import Preflight from "./launch/Preflight.svelte";
+  import { Box, GitBranch, FileCode, X, LoaderCircle, CircleCheck, Rocket, HardDrive, MemoryStick, ExternalLink, Info } from "lucide-svelte";
 
   interface Props {
     // Both set: configure this existing environment instead of launching
     app?: string;
     env?: string;
+    // A catalog entry to start from, as in #/launch/plausible
+    preset?: string;
   }
 
-  let { app: editApp, env: editEnv }: Props = $props();
+  let { app: editApp, env: editEnv, preset: presetId }: Props = $props();
   const editing = !!(editApp && editEnv);
 
   type Kind = "image" | "git" | "compose";
@@ -49,6 +60,15 @@
   ];
 
   let kind = $state<Kind>("image");
+
+  // Known apps, and the one the form started from
+  let catalog = $state<Preset[]>([]);
+  let preset = $state<Preset | null>(null);
+  // Showing the whole catalog rather than just the chosen entry
+  let browsing = $state(true);
+  // What each hostname-following variable was last set to, so a value
+  // someone typed over is left alone
+  const followed = new Map<number, string>();
 
   // What to run
   let image = $state("");
@@ -87,6 +107,11 @@
   let setupSuggested = $state(false);
   let setupTouched = false;
 
+  // When deploys back up the volumes first, and how many backups to keep;
+  // the defaults are left out of the spec
+  let backupBefore = $state<BackupPolicy>("setup");
+  let backupKeep = $state<number | null>(null);
+
   // Image only
   let volumes = $state<{ source: string; target: string }[]>([]);
   let command = $state("");
@@ -105,6 +130,12 @@
   let submitting = $state(false);
   let submitError = $state<string | null>(null);
   let attempted = $state(false);
+
+  // Whether the server can run it, checked as the form changes
+  let checks = $state<Check[]>([]);
+  let checking = $state(false);
+  let launchAnyway = $state(false);
+  let failedChecks = $derived(checks.filter((c) => c.status === "failed"));
 
   let sourceKey = $derived(
     kind === "image" ? `image:${image.trim()}` : kind === "git" ? `git:${repo.trim()}#${ref.trim()}:${composePath.trim()}` : `compose:${composeText}`
@@ -133,6 +164,60 @@
     (imageInfo?.volumes ?? []).filter((path) => !volumes.some((v) => v.target.trim() === path))
   );
 
+  // The values variables will have, without secrets: published ports and
+  // requirement conditions like COMPOSE_PROFILES depend on them
+  let effectiveVariables = $derived.by(() => {
+    const vars: Record<string, string> = {};
+    for (const r of rows) {
+      if (!r.key || r.secret) continue;
+      const value = r.value || (r.stack?.has_default ? r.stack.default ?? "" : "");
+      if (value) vars[r.key] = value;
+    }
+    return vars;
+  });
+
+  // What it needs of the server: what the stack says, like Sentry's install
+  // script, else what its catalog entry says, with what compose reserves
+  let requirements = $derived.by((): Requirements | undefined => {
+    const own = kind !== "image" ? stack?.requirements : undefined;
+    const known = preset?.kind === kind ? preset.requirements : undefined;
+    if (!known || own?.variants?.length) return own;
+    return { ...known, reserved_memory_mb: own?.reserved_memory_mb, reserved_cpus: own?.reserved_cpus };
+  });
+
+  // Variables like BASE_URL follow the first hostname until someone types
+  // their own value
+  $effect(() => {
+    for (const r of rows) {
+      const template = r.preset?.from_hostname;
+      if (!template) continue;
+      const next = fromHostname(template, hostnames);
+      if (r.value === (followed.get(r.id) ?? "")) r.value = next;
+      followed.set(r.id, next);
+    }
+  });
+
+  let preflightRequest = $derived.by((): PreflightRequest | null => {
+    if (!node || !loaded) return null;
+    // A stack is checked once it's been read, so its needs are known
+    if (kind !== "image" && (!stack?.services || stale)) return null;
+    return {
+      node,
+      app: appName,
+      environment: envName,
+      hostnames: hostnames.length ? [...hostnames] : undefined,
+      requirements,
+      ports: published.length ? published.map((p) => ({ service: p.service, published: p.port.published! })) : undefined,
+      variables: Object.keys(effectiveVariables).length ? effectiveVariables : undefined,
+    };
+  });
+
+  // A new failure needs its own decision to launch anyway
+  $effect(() => {
+    void failedChecks.map((c) => c.id + c.title).join();
+    launchAnyway = false;
+  });
+
   let problems = $derived.by(() => {
     const p: string[] = [];
     if (kind === "image" && !image.trim()) p.push("Name the image to run.");
@@ -148,7 +233,7 @@
     if (hostnames.length && !port) p.push("Give the port the hostnames route to.");
     if (hostnames.length && kind !== "image" && !service) p.push("Pick the service the hostnames route to.");
     if (port !== null && (port < 1 || port > 65535)) p.push("The port must be between 1 and 65535.");
-    const missing = rows.filter((r) => r.stack?.required && !r.value && !r.stored).map((r) => r.key);
+    const missing = rows.filter((r) => isRequired(r) && !r.value && !r.stored).map((r) => r.key);
     if (missing.length) p.push(`Set ${missing.join(", ")}.`);
     if (rows.some((r) => r.key && !isEnvKey(r.key))) p.push("Fix the variable names marked in red.");
     const keys = rows.map((r) => r.key).filter(Boolean);
@@ -161,6 +246,10 @@
         if (row && !row.value && !row.stored && !row.stack?.has_default) p.push(`Set ${name}, which the setup command uses.`);
       }
     }
+    if (backupKeep !== null && (backupKeep < 1 || backupKeep > 100 || !Number.isInteger(backupKeep)))
+      p.push("Keep between 1 and 100 backups.");
+    if (failedChecks.length && !launchAnyway)
+      p.push(`${node} failed ${failedChecks.length === 1 ? "a check" : "checks"} below. Fix ${failedChecks.length === 1 ? "it" : "them"}, or launch anyway.`);
     return p;
   });
 
@@ -171,13 +260,24 @@
 
   onMount(async () => {
     try {
-      const [serverList, apps, config] = await Promise.all([api.servers.list(), api.apps.list(), api.config()]);
+      const [serverList, apps, config, known] = await Promise.all([
+        api.servers.list(),
+        api.apps.list(),
+        api.config(),
+        // The form works without the catalog, so failing to load it isn't fatal
+        editing ? Promise.resolve([]) : api.launch.catalog().catch(() => [] as Preset[]),
+      ]);
+      catalog = known;
       servers = serverList;
       existing = new Set(apps.map((a) => `${a.environment.app}/${a.environment.name}`));
       domain = commonDomain(apps.flatMap((a) => a.current_deployment?.spec?.hostnames ?? []));
       npmConfigured = config.npm_configured;
       node = (serverList.find((s) => s.is_default) ?? serverList[0])?.name ?? "";
       if (editing) await loadExisting();
+      else if (presetId) {
+        const p = catalog.find((c) => c.id === presetId);
+        if (p) applyPreset(p);
+      }
       loaded = true;
     } catch (e) {
       loadError = e instanceof ApiError ? e.message : "Couldn't load what the form needs";
@@ -201,6 +301,8 @@
 
     hostnames = [...(spec.hostnames ?? [])];
     port = spec.port || null;
+    backupBefore = spec.backup?.before ?? "setup";
+    backupKeep = spec.backup?.keep || null;
     const storedKeys = new Set(stored.map((s) => s.key));
     rows = [
       ...Object.entries(spec.env ?? {}).map(([key, value]) => newRow({ key, value })),
@@ -313,8 +415,76 @@
     }
   }
 
+  // Fills the form from a catalog entry. Everything stays editable; the
+  // stack is still read, so the variables it has show up too.
+  function applyPreset(p: Preset) {
+    resetForm();
+    preset = p;
+    browsing = false;
+    kind = p.kind;
+    appName = p.id;
+    nameTouched = true;
+    if (p.kind === "image") {
+      image = p.image ?? "";
+      port = p.port ?? null;
+      volumes = (p.volumes ?? []).map((v) => {
+        const i = v.indexOf(":");
+        return { source: v.slice(0, i), target: v.slice(i + 1) };
+      });
+      healthcheck = p.healthcheck ?? "";
+      showAdvanced = volumes.length > 0 || !!healthcheck;
+    } else {
+      if (p.kind === "git") {
+        repo = p.source?.repo ?? "";
+        ref = p.source?.ref ?? "";
+        composePath = p.source?.path ?? "";
+        if (p.setup) {
+          setupCommand = p.setup;
+          setupTouched = true;
+        }
+      } else {
+        composeText = p.compose ?? "";
+      }
+      service = p.expose?.service ?? "";
+      port = p.expose?.port ?? null;
+    }
+    portTouched = port !== null;
+    rows = (p.variables ?? []).map((v) =>
+      newRow({ key: v.name, value: v.value ?? "", secret: !!v.secret, preset: v })
+    );
+    inspect();
+  }
+
+  // Back to an empty form, keeping where it runs
+  function resetForm() {
+    preset = null;
+    image = repo = ref = composePath = composeText = "";
+    imageInfo = stack = null;
+    inspectError = null;
+    inspectedFor = "";
+    appName = "";
+    nameTouched = portTouched = setupTouched = false;
+    port = null;
+    service = "";
+    rows = [];
+    followed.clear();
+    setupCommand = "";
+    setupAlways = setupForce = setupSuggested = false;
+    volumes = [];
+    command = healthcheck = "";
+    showAdvanced = false;
+  }
+
+  function startBlank() {
+    resetForm();
+    kind = "image";
+    browsing = true;
+  }
+
   function chooseKind(k: Kind) {
     if (k === kind) return;
+    // Another kind is no longer the catalog entry
+    if (preset && preset.kind !== k) preset = null;
     kind = k;
     imageInfo = null;
     stack = null;
@@ -373,12 +543,19 @@
     } else {
       spec.compose = composeText;
     }
+    if (backupBefore !== "setup" || backupKeep) {
+      spec.backup = { before: backupBefore !== "setup" ? backupBefore : undefined, keep: backupKeep || undefined };
+    }
     if (hostnames.length) {
       spec.hostnames = [...hostnames];
       spec.port = port ?? undefined;
       if (kind !== "image") spec.expose = { service, port: port! };
     } else if (kind === "image" && port) {
       spec.port = port;
+    } else if (kind !== "image" && service && port) {
+      // Joins the docktrine network, so other containers on the server can
+      // reach it by name, and a hostname added later routes to it
+      spec.expose = { service, port };
     }
 
     const env: Record<string, string> = {};
@@ -389,8 +566,8 @@
       if (r.secret) {
         if (r.value) secretValues[r.key] = r.value;
         if (r.value || r.stored) secretNames.push(r.key);
-      } else if (r.value !== "" || !r.stack) {
-        // Blank stack variables are left to their defaults
+      } else if (r.value !== "" || (!r.stack && !r.preset)) {
+        // Blank stack and catalog variables are left to their defaults
         env[r.key] = r.value;
       }
     }
@@ -440,6 +617,42 @@
   </section>
 {/snippet}
 
+{#snippet backupChoice(name: string, value: BackupPolicy, label: string, hint: string | null)}
+  <label class="flex items-start gap-2.5">
+    <input type="radio" name="backup-before" checked={backupBefore === value} onchange={() => (backupBefore = value)} class="mt-1 accent-[rgb(var(--brass))]" id="backup-{name}" />
+    <span>
+      {label}
+      {#if hint}<span class="block hint mt-0.5">{hint}</span>{/if}
+    </span>
+  </label>
+{/snippet}
+
+{#snippet backups()}
+  <fieldset>
+    <legend class="label">Back up the volumes</legend>
+    <div class="space-y-2 text-sm">
+      {#if kind === "git"}
+        {@render backupChoice("setup", "setup", "Before the setup command runs", "Its migrations can't be undone by rolling back; a backup is the way back.")}
+        {@render backupChoice("upgrade", "upgrade", "Also before deploys that change the commit or an image", "Including a newer image behind a tag like latest.")}
+        {@render backupChoice("never", "never", "Never on its own", null)}
+      {:else}
+        {@render backupChoice("upgrade", "upgrade", kind === "image" ? "Before deploys that change the image" : "Before deploys that change an image", "Including a newer image behind a tag like latest.")}
+        {@render backupChoice("setup", "setup", "Only when you ask for one", null)}
+      {/if}
+    </div>
+  </fieldset>
+  <div class="mt-4 flex flex-wrap items-center gap-3">
+    <label for="backup-keep" class="text-sm">Keep the last</label>
+    <input id="backup-keep" type="number" min="1" max="100" bind:value={backupKeep} class="input font-mono h-9 w-20" placeholder="5" />
+    <span class="text-sm">backups</span>
+  </div>
+  <p class="hint">
+    The volumes are copied into compressed archives on {node || "the server"}{kind === "git" ? ", with the stack's directory" : ""},
+    with the containers stopped so databases are copied whole. The newest backup that finished is never deleted on its own.
+    Restore one from the environment's Backups tab.
+  </p>
+{/snippet}
+
 {#snippet inspectStatus()}
   {#if inspecting}
     <p class="hint flex items-center gap-1.5"><LoaderCircle class="w-3.5 h-3.5 animate-spin" /> Reading…</p>
@@ -458,7 +671,7 @@
     <p class="hint flex items-start gap-1.5">
       <CircleCheck class="w-3.5 h-3.5 mt-[3px] text-success shrink-0" />
       <span>
-        {#if stack.compose_file}Read <span class="font-mono">{stack.compose_file}</span>{#if stack.commit} at <span class="font-mono">{stack.commit.slice(0, 7)}</span>{/if}:{:else}Read:{/if}
+        {#if stack.compose_file}Read <span class="font-mono">{stack.compose_file}</span>{#if stack.commit}{" "}at <span class="font-mono">{stack.commit.slice(0, 7)}</span>{/if}:{:else}Read:{/if}
         {stack.services.length} {stack.services.length === 1 ? "service" : "services"},
         {stack.variables?.length ?? 0} {stack.variables?.length === 1 ? "variable" : "variables"}.
       </span>
@@ -505,6 +718,66 @@
     }}
   >
     <div class="space-y-6 min-w-0">
+      {#if !editing && catalog.length}
+        <section class="riveted px-6 sm:px-8 py-6" aria-labelledby="catalog-title">
+          {#if browsing || !preset}
+            <h2 id="catalog-title" class="section-title">Start from a known app</h2>
+            <p class="text-sm text-muted-foreground mt-1.5 max-w-2xl">
+              Each one fills the form below with a tested version and the settings it needs. You can change any of it.
+            </p>
+            <ul class="grid sm:grid-cols-2 xl:grid-cols-3 gap-3 mt-5">
+              {#each catalog as p (p.id)}
+                {@const needs = describeRequirements(p.requirements)}
+                <li class="flex">
+                  <button
+                    type="button"
+                    onclick={() => applyPreset(p)}
+                    aria-current={preset?.id === p.id}
+                    class="w-full text-left rounded-md p-4 border-2 transition-colors flex flex-col
+                      {preset?.id === p.id ? 'border-brass bg-brass/[0.08]' : 'border-border bg-plate/40 hover:border-brass/50'}"
+                  >
+                    <span class="flex items-baseline justify-between gap-2">
+                      <span class="font-semibold">{p.name}</span>
+                      <span class="font-mono text-[12px] text-muted-foreground shrink-0">{p.version}</span>
+                    </span>
+                    <span class="block text-[13px] text-muted-foreground mt-1 flex-1">{p.description}</span>
+                    {#if needs}
+                      <span class="flex items-start gap-1.5 text-[12px] text-muted-foreground mt-3">
+                        <MemoryStick class="w-3.5 h-3.5 mt-px shrink-0" />{needs}
+                      </span>
+                    {/if}
+                  </button>
+                </li>
+              {/each}
+            </ul>
+            {#if preset}
+              <button type="button" class="mt-4 text-sm font-medium text-link hover:underline underline-offset-2" onclick={() => (browsing = false)}>
+                Keep {preset.name}
+              </button>
+            {/if}
+          {:else}
+            <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+              <h2 id="catalog-title" class="section-title">{preset.name} <span class="font-mono text-[13px] text-muted-foreground font-normal">{preset.version}</span></h2>
+              <a href={preset.homepage} target="_blank" rel="noreferrer" class="text-[13px] text-link hover:underline underline-offset-2 inline-flex items-center gap-1">
+                {preset.homepage.replace(/^https:\/\//, "").replace(/\/$/, "")}<ExternalLink class="w-3 h-3" />
+              </a>
+              <span class="ml-auto flex gap-4 text-sm">
+                <button type="button" class="font-medium text-link hover:underline underline-offset-2" onclick={() => (browsing = true)}>Pick another</button>
+                <button type="button" class="font-medium text-muted-foreground hover:text-foreground" onclick={startBlank}>Start blank</button>
+              </span>
+            </div>
+            <p class="text-sm text-muted-foreground mt-1.5 max-w-2xl">{preset.description}</p>
+            {#if preset.notes?.length}
+              <ul class="mt-4 space-y-2 text-sm max-w-2xl">
+                {#each preset.notes as note}
+                  <li class="flex gap-2"><Info class="w-4 h-4 mt-0.5 text-brass shrink-0" /><span>{note}</span></li>
+                {/each}
+              </ul>
+            {/if}
+          {/if}
+        </section>
+      {/if}
+
       {#snippet what()}
         {#if !editing}
           <div class="grid sm:grid-cols-3 gap-3 mb-6" role="radiogroup" aria-label="What to run">
@@ -802,6 +1075,10 @@
               </label>
             {/if}
           {/if}
+
+          <div class="mt-6 pt-5 border-t">
+            {@render backups()}
+          </div>
         {/snippet}
         {@render section(5, "Setup", "Some stacks need a step before they start, like an install script that creates their configuration and migrates their database.", setup)}
       {/if}
@@ -877,6 +1154,10 @@
         {/snippet}
         {@render section(5, "Storage and startup", null, advanced)}
       {/if}
+
+      {#if kind !== "git"}
+        {@render section(kind === "image" ? 6 : 5, "Backups", null, backups)}
+      {/if}
     </div>
 
     <!-- What will happen, and the button that makes it happen -->
@@ -915,6 +1196,14 @@
           </div>
         {/if}
       </dl>
+
+      <Preflight request={preflightRequest} bind:checks bind:checking />
+      {#if failedChecks.length}
+        <label class="flex items-start gap-2.5 text-sm mt-4">
+          <input type="checkbox" bind:checked={launchAnyway} class="w-4 h-4 mt-0.5 accent-[rgb(var(--brass))]" />
+          <span>Launch anyway <span class="block hint mt-0.5">It will likely fail, or run short of resources.</span></span>
+        </label>
+      {/if}
 
       {#if attempted && problems.length}
         <ul class="mt-5 space-y-1.5 text-sm text-destructive" role="alert">

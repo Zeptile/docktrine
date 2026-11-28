@@ -44,31 +44,42 @@ func StacksDir() string {
 	return "/var/lib/docktrine/stacks"
 }
 
+// gitEnviron is the environment git runs in when it reaches repositories
+// people name.
+func gitEnviron() []string {
+	return append(os.Environ(),
+		// Never wait for a password: public repositories only
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_ASKPASS=/bin/false",
+		// Submodules can't reach file:// or ext:: transports either
+		"GIT_ALLOW_PROTOCOL=https",
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_LFS_SKIP_SMUDGE=1",
+	)
+}
+
+// gitError explains a failed git command in a sentence.
+func gitError(command string, err error, out []byte) error {
+	if strings.Contains(err.Error(), "executable file not found") {
+		return fmt.Errorf("git must be installed on the Docktrine server")
+	}
+	msg := strings.TrimSpace(string(out))
+	if strings.Contains(msg, "terminal prompts disabled") || strings.Contains(msg, "could not read Username") {
+		msg = "the repository is private or doesn't exist; only public repositories are supported"
+	}
+	return fmt.Errorf("git %s: %s", command, msg)
+}
+
 // fetchRepo fetches one commit of src into dir, which must be empty, and
 // returns the commit hash.
 func fetchRepo(ctx context.Context, src *manifest.GitSource, dir string) (string, error) {
 	git := func(args ...string) (string, error) {
 		cmd := exec.CommandContext(ctx, "git", args...)
 		cmd.Dir = dir
-		cmd.Env = append(os.Environ(),
-			// Never wait for a password: public repositories only
-			"GIT_TERMINAL_PROMPT=0",
-			"GIT_ASKPASS=/bin/false",
-			// Submodules can't reach file:// or ext:: transports either
-			"GIT_ALLOW_PROTOCOL=https",
-			"GIT_CONFIG_NOSYSTEM=1",
-			"GIT_LFS_SKIP_SMUDGE=1",
-		)
+		cmd.Env = gitEnviron()
 		out, err := cmd.CombinedOutput()
 		if err != nil {
-			if strings.Contains(err.Error(), "executable file not found") {
-				return "", fmt.Errorf("git must be installed on the Docktrine server")
-			}
-			msg := strings.TrimSpace(string(out))
-			if strings.Contains(msg, "terminal prompts disabled") || strings.Contains(msg, "could not read Username") {
-				msg = "the repository is private or doesn't exist; only public repositories are supported"
-			}
-			return "", fmt.Errorf("git %s: %s", args[0], msg)
+			return "", gitError(args[0], err, out)
 		}
 		return strings.TrimSpace(string(out)), nil
 	}
@@ -161,6 +172,8 @@ type StackInfo struct {
 	Port    int    `json:"port,omitempty"`
 	// A setup command the stack likely needs, from its install script
 	Setup string `json:"setup,omitempty"`
+	// What it needs of the node, for the preflight checks
+	Requirements *Requirements `json:"requirements,omitempty"`
 }
 
 type StackService struct {
@@ -227,6 +240,9 @@ func InspectStack(ctx context.Context, src *manifest.GitSource, compose string) 
 
 		projectDir := filepath.Dir(filepath.Join(dir, file))
 		info.Setup = suggestSetup(projectDir)
+		if req, ok := scriptRequirements(projectDir); ok {
+			info.Requirements = &req
+		}
 		dotEnv = readEnvFile(filepath.Join(projectDir, ".env"))
 		for _, name := range []string{".env.example", ".env.sample", ".env.dist", "example.env", ".env.template"} {
 			if lines := readEnvFile(filepath.Join(projectDir, name)); len(lines) > 0 {
@@ -244,6 +260,12 @@ func InspectStack(ctx context.Context, src *manifest.GitSource, compose string) 
 		info.Services = append(info.Services, describeService(name, services[name]))
 	}
 	info.Service, info.Port = suggestExposed(info.Services)
+	if mem, cpus := composeReservations(services); mem > 0 || cpus > 0 {
+		if info.Requirements == nil {
+			info.Requirements = &Requirements{}
+		}
+		info.Requirements.ReservedMemoryMB, info.Requirements.ReservedCPUs = mem, cpus
+	}
 	info.Variables = stackVariables(compose, dotEnv, example)
 	return info, nil
 }

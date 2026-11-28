@@ -10,6 +10,7 @@ import (
 
 	"github.com/Zeptile/docktrine/cmd/api/middleware"
 	"github.com/Zeptile/docktrine/internal/database"
+	"github.com/Zeptile/docktrine/internal/deploy"
 	"github.com/Zeptile/docktrine/internal/logger"
 	"github.com/Zeptile/docktrine/internal/manifest"
 	"github.com/gofiber/fiber/v2"
@@ -135,6 +136,11 @@ func (h *Handler) ListApps(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	checks, err := h.db.ListUpdateChecks()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
 	result := []fiber.Map{}
 	for i := range envs {
 		env := &envs[i]
@@ -155,6 +161,11 @@ func (h *Handler) ListApps(c *fiber.Ctx) error {
 			if current, err := h.db.GetDeployment(*env.CurrentDeploymentID); err == nil && current != nil {
 				current.Log = ""
 				item["current_deployment"] = current
+				if deploy.UpdatesCheckable(env, current.Spec) {
+					if notice := deploy.UpdateNotice(env, checks[env.ID], current.Spec); notice != nil {
+						item["update"] = notice
+					}
+				}
 			}
 		}
 		result = append(result, item)
@@ -195,6 +206,16 @@ func (h *Handler) GetAppEnvironment(c *fiber.Ctx) error {
 		"environment": env,
 		"deployments": deployments,
 		"hostnames":   domains,
+	}
+
+	// Whether updates can be checked, and what the last check found
+	if env.CurrentDeploymentID != nil {
+		if current, err := h.db.GetDeployment(*env.CurrentDeploymentID); err == nil && current != nil {
+			result["update_checkable"] = deploy.UpdatesCheckable(env, current.Spec)
+			if notice := h.updateNotice(env, current); notice != nil {
+				result["update"] = notice
+			}
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -296,12 +317,13 @@ func (h *Handler) RollbackEnvironment(c *fiber.Ctx) error {
 
 // DestroyEnvironment godoc
 // @Summary Destroy an environment
-// @Description Remove its containers and hostnames; purge=true also deletes volumes
+// @Description Remove its containers and hostnames; purge=true also deletes volumes. Backups are kept unless delete_backups=true.
 // @Tags apps
 // @Produce json
 // @Param app path string true "App name"
 // @Param env path string true "Environment name"
 // @Param purge query bool false "Also delete volumes"
+// @Param delete_backups query bool false "Also delete its backups"
 // @Success 200 {object} interface{}
 // @Router /apps/{app}/{env} [delete]
 func (h *Handler) DestroyEnvironment(c *fiber.Ctx) error {
@@ -317,7 +339,7 @@ func (h *Handler) DestroyEnvironment(c *fiber.Ctx) error {
 		return c.Status(409).JSON(fiber.Map{"error": "a deployment is in progress"})
 	}
 
-	if err := h.deployer.Destroy(env, c.QueryBool("purge", false)); err != nil {
+	if err := h.deployer.Destroy(env, c.QueryBool("purge", false), c.QueryBool("delete_backups", false)); err != nil {
 		logger.Error(err, fmt.Sprintf("Failed to destroy %s/%s", env.App, env.Name))
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

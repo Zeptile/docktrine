@@ -118,6 +118,62 @@ export interface Spec {
   preview?: boolean;
   branch?: string;
   ttl?: string;
+  // When deploys back up the volumes first; before setup commands when left out
+  backup?: { before?: BackupPolicy; keep?: number };
+}
+
+export type BackupPolicy = "setup" | "upgrade" | "never";
+
+export interface BackupItem {
+  kind: "volume" | "stack";
+  // The volume, or the stack directory's path on the server
+  name: string;
+  file: string;
+  size: number;
+  archive_size: number;
+}
+
+export interface SkippedMount {
+  type: string;
+  source: string;
+  target: string;
+  container?: string;
+  reason: string;
+}
+
+export interface Backup {
+  id: number;
+  app: string;
+  environment: string;
+  server: string;
+  // Its directory on the server
+  path: string;
+  // Reads after "since"
+  reason: string;
+  status: "running" | "succeeded" | "failed";
+  message?: string;
+  // What ran when it was taken
+  deployment_id?: number;
+  spec?: Spec;
+  // The deploy that took it
+  triggered_by?: number;
+  items: BackupItem[];
+  skipped: SkippedMount[];
+  size: number;
+  created_by?: string;
+  created_at: string;
+  finished_at?: string;
+  restored_at?: string;
+}
+
+export interface BackupList {
+  backups: Backup[];
+  // The environment's directory on the server
+  dir: string;
+  // How many the server keeps by default
+  keep: number;
+  // A backup or restore in progress
+  busy?: string;
 }
 
 export interface Environment {
@@ -148,12 +204,46 @@ export interface Deployment {
   finished_at?: string;
 }
 
+// Whether what an environment runs has a newer version: a new commit on
+// its Git ref, or a tag that points to a new image
+export interface UpdateInfo {
+  // The deployment it compared against, which is the one running
+  deployment_id: number;
+  status: "current" | "available" | "pinned" | "error";
+  git?: {
+    repo: string;
+    ref?: string;
+    // "default" is the remote's default branch
+    ref_kind: "branch" | "tag" | "default" | "commit";
+    current: string;
+    latest?: string;
+    // Commits ahead of what runs; absent when not known
+    behind?: number;
+    compare_url?: string;
+    update: boolean;
+  };
+  images?: {
+    service?: string;
+    image: string;
+    current?: string;
+    latest?: string;
+    update: boolean;
+    error?: string;
+  }[];
+  error?: string;
+  checked_at: string;
+  next_check_at: string;
+  // The setup command updating runs again, e.g. ./install.sh
+  setup?: string;
+}
+
 export interface AppSummary {
   environment: Environment;
   // The last dozen deployments, oldest first
   history: { id: number; status: DeploymentStatus; created_at: string }[];
   latest_deployment?: Deployment;
   current_deployment?: Deployment;
+  update?: UpdateInfo;
 }
 
 export interface ContainerStatus {
@@ -172,6 +262,9 @@ export interface EnvironmentDetail {
   hostnames: string[];
   containers?: ContainerStatus[];
   containers_error?: string;
+  // Whether it runs anything updates can be checked for
+  update_checkable?: boolean;
+  update?: UpdateInfo;
 }
 
 export interface StackPort {
@@ -210,6 +303,39 @@ export interface StackInfo {
   port?: number;
   // A setup command suggested from the repository's install script
   setup?: string;
+  // What it needs of the server, for the preflight checks
+  requirements?: Requirements;
+}
+
+export interface Requirements {
+  // The script the minimums come from, e.g. install/_min-requirements.sh
+  source?: string;
+  // The first whose condition holds applies
+  variants?: { when?: { variable: string; value: string; not?: boolean }; memory_mb?: number; cpus?: number }[];
+  docker_version?: string;
+  reserved_memory_mb?: number;
+  reserved_cpus?: number;
+}
+
+export interface PreflightRequest {
+  node: string;
+  app: string;
+  environment: string;
+  hostnames?: string[];
+  requirements?: Requirements;
+  // Published ports as the compose file writes them
+  ports?: { service: string; published: string }[];
+  // Values variables will have; secrets are left out
+  variables?: Record<string, string>;
+}
+
+export type CheckStatus = "ok" | "info" | "warning" | "failed";
+
+export interface Check {
+  id: string;
+  status: CheckStatus;
+  title: string;
+  detail?: string;
 }
 
 export interface ImageInfo {
@@ -218,6 +344,45 @@ export interface ImageInfo {
   volumes: string[];
   healthcheck?: boolean;
   port?: number;
+}
+
+// A random value for a secret variable: alnum and hex count characters,
+// base64 counts random bytes, as the secret generator takes them
+export interface GenerateFormat {
+  kind: "alnum" | "hex" | "base64";
+  length: number;
+}
+
+export interface PresetVariable {
+  name: string;
+  value?: string;
+  description?: string;
+  required?: boolean;
+  secret?: boolean;
+  generate?: GenerateFormat;
+  // Filled from the first hostname, e.g. "https://{hostname}"
+  from_hostname?: string;
+}
+
+// A known app from the catalog, which fills the launch form
+export interface Preset {
+  id: string;
+  name: string;
+  description: string;
+  homepage: string;
+  kind: "image" | "git" | "compose";
+  version: string;
+  image?: string;
+  source?: { repo: string; ref: string; path?: string };
+  compose?: string;
+  expose?: { service: string; port: number };
+  port?: number;
+  volumes?: string[];
+  healthcheck?: string;
+  setup?: string;
+  variables?: PresetVariable[];
+  requirements?: Requirements;
+  notes?: string[];
 }
 
 export interface SecretInfo {
@@ -320,6 +485,49 @@ function headers(): Record<string, string> {
   const h: Record<string, string> = { "X-Docktrine-Client": "web" };
   if (memoryKey) h["X-API-Key"] = memoryKey;
   return h;
+}
+
+// Where a shell opens: in a container, or on the node itself (admins only)
+export type ShellTarget = { kind: "container"; server: string; id: string } | { kind: "node"; server: string };
+
+// Status messages from a shell socket; terminal bytes arrive as binary
+export type ShellMessage =
+  | { type: "ready"; shell: string }
+  | { type: "exit"; code: number }
+  | { type: "closed"; reason: string }
+  | { type: "error"; message: string };
+
+function shellPath(target: ShellTarget, size: { cols: number; rows: number }) {
+  const q = new URLSearchParams({ cols: String(size.cols), rows: String(size.rows) });
+  if (target.kind === "node") return `${API_BASE}/servers/${enc(target.server)}/shell?${q}`;
+  q.set("server", target.server);
+  return `${API_BASE}/containers/${enc(target.id)}/shell?${q}`;
+}
+
+// Opens a shell. A browser can't set headers on a WebSocket, so an API key
+// goes as a second subprotocol, which the server reads but never echoes.
+export function openShell(target: ShellTarget, size: { cols: number; rows: number }): WebSocket {
+  const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+  const protocols = ["docktrine"];
+  if (memoryKey) protocols.push(`docktrine-key.${memoryKey}`);
+  const ws = new WebSocket(`${scheme}//${location.host}${shellPath(target, size)}`, protocols);
+  ws.binaryType = "arraybuffer";
+  return ws;
+}
+
+// A failed WebSocket handshake hides its status from the page. Asking the
+// same URL over plain HTTP gets the reason; 426 means access is fine and
+// the failure was elsewhere.
+export async function shellRefusal(target: ShellTarget): Promise<string | null> {
+  try {
+    const response = await fetch(shellPath(target, { cols: 80, rows: 24 }), { headers: headers() });
+    if (response.status === 426) return null;
+    if (response.status === 401) window.dispatchEvent(new Event("docktrine:unauthorized"));
+    const body = await response.json().catch(() => ({}));
+    return body.error || response.statusText;
+  } catch {
+    return null;
+  }
 }
 
 const json = (method: string, body?: unknown): RequestInit => ({
@@ -467,14 +675,42 @@ export const api = {
           : undefined,
       }),
 
+    // Deploys the running spec at the newest commit and images
+    update: (app: string, env: string): Promise<Deployment> =>
+      request(`/apps/${enc(app)}/${enc(env)}/update`, json("POST")),
+
+    checkUpdates: (app: string, env: string): Promise<UpdateInfo> =>
+      request(`/apps/${enc(app)}/${enc(env)}/update/check`, json("POST")),
+
     destroy: (
       app: string,
       env: string,
-      purge: boolean
-    ): Promise<{ message: string }> =>
-      request(`/apps/${enc(app)}/${enc(env)}${purge ? "?purge=true" : ""}`, {
-        method: "DELETE",
-      }),
+      purge: boolean,
+      deleteBackups = false
+    ): Promise<{ message: string }> => {
+      const params = new URLSearchParams();
+      if (purge) params.set("purge", "true");
+      if (deleteBackups) params.set("delete_backups", "true");
+      const query = params.toString() ? `?${params}` : "";
+      return request(`/apps/${enc(app)}/${enc(env)}${query}`, { method: "DELETE" });
+    },
+
+    backups: {
+      list: (app: string, env: string): Promise<BackupList> =>
+        request(`/apps/${enc(app)}/${enc(env)}/backups`),
+      // Starts one; poll the list for how it goes
+      create: (app: string, env: string): Promise<Backup> =>
+        request(`/apps/${enc(app)}/${enc(env)}/backups`, json("POST")),
+      restore: (
+        app: string,
+        env: string,
+        id: number,
+        redeploy: boolean
+      ): Promise<{ backup: Backup; deployment?: Deployment; message: string }> =>
+        request(`/apps/${enc(app)}/${enc(env)}/backups/${id}/restore`, json("POST", { redeploy })),
+      remove: (app: string, env: string, id: number): Promise<{ message: string }> =>
+        request(`/apps/${enc(app)}/${enc(env)}/backups/${id}`, json("DELETE")),
+    },
 
     secrets: {
       list: (app: string, env: string): Promise<SecretInfo[]> =>
@@ -535,6 +771,11 @@ export const api = {
       request("/stacks/inspect", json("POST", body)),
     inspectImage: (image: string): Promise<ImageInfo> =>
       request(`/images/inspect?image=${enc(image)}`),
+    // Whether the server can run it: resources, ports, ingress
+    preflight: (body: PreflightRequest, signal?: AbortSignal): Promise<{ checks: Check[] }> =>
+      request("/launch/preflight", { ...json("POST", body), signal }),
+    // Known apps, to start the form from
+    catalog: (): Promise<Preset[]> => request("/catalog"),
   },
 
   keys: {

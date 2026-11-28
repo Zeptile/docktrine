@@ -65,6 +65,9 @@ func main() {
 	if err := db.FailStaleDeployments(); err != nil {
 		logger.Fatal(err, "Failed to clean up interrupted deployments")
 	}
+	if err := db.FailStaleBackups(); err != nil {
+		logger.Fatal(err, "Failed to clean up interrupted backups")
+	}
 
 	box, err := secrets.LoadBox(database.DataPath())
 	if err != nil {
@@ -73,6 +76,7 @@ func main() {
 
 	deployer := deploy.New(db, box, deploy.ConfigFromEnv())
 	deployer.StartJanitor(context.Background(), 10*time.Minute)
+	deployer.StartUpdateChecks(context.Background(), deploy.UpdateIntervalFromEnv())
 
 	app := fiber.New()
 	
@@ -91,6 +95,7 @@ func main() {
 	app.Static("/", "./web/dist")
 	
 	handler := handlers.NewHandler(db, deployer, box)
+	handler.StartShellJanitor(context.Background())
 
 	// Signing in, and accepting an invite, happen before there's a session
 	auth := app.Group("/api/auth")
@@ -133,6 +138,9 @@ func main() {
 	containers.Get("/:id", handler.GetContainer)
 	containers.Post("/restart/:id", canDeploy, handler.RestartContainer)
 	containers.Post("/create", canDeploy, handler.CreateContainer)
+	// A WebSocket; a shell in a container needs deployer, one on the node
+	// is root on the host and needs admin
+	containers.Get("/:id/shell", canDeploy, handler.ShellUpgrade, handler.ContainerShell())
 
 	servers := api.Group("/servers")
 	servers.Get("/", handler.ListServers)
@@ -143,6 +151,7 @@ func main() {
 	servers.Get("/:name/health", handler.ServerHealth)
 	servers.Post("/:name/ingress", isAdmin, handler.InstallIngress)
 	servers.Post("/:name/prune", isAdmin, handler.PruneServer)
+	servers.Get("/:name/shell", isAdmin, handler.ShellUpgrade, handler.NodeShell())
 
 	api.Get("/config", handler.GetConfig)
 
@@ -162,6 +171,8 @@ func main() {
 	// user gives, so it takes the same role as deploying
 	api.Post("/stacks/inspect", canDeploy, handler.InspectStack)
 	api.Get("/images/inspect", canDeploy, handler.InspectImage)
+	api.Post("/launch/preflight", canDeploy, handler.Preflight)
+	api.Get("/catalog", canDeploy, handler.ListCatalog)
 
 	apps := api.Group("/apps")
 	apps.Get("/", handler.ListApps)
@@ -169,9 +180,17 @@ func main() {
 	apps.Delete("/:app/:env", canDeploy, handler.DestroyEnvironment)
 	apps.Get("/:app/:env/logs", handler.GetAppLogs)
 	apps.Post("/:app/:env/rollback", canDeploy, handler.RollbackEnvironment)
+	// Checking reaches registries and forges, so it takes the same role as
+	// the update it leads to
+	apps.Post("/:app/:env/update", canDeploy, handler.UpdateEnvironment)
+	apps.Post("/:app/:env/update/check", canDeploy, handler.CheckUpdates)
 	apps.Get("/:app/:env/secrets", handler.ListSecrets)
 	apps.Put("/:app/:env/secrets", canDeploy, handler.SetSecrets)
 	apps.Delete("/:app/:env/secrets/:key", canDeploy, handler.DeleteSecret)
+	apps.Get("/:app/:env/backups", handler.ListBackups)
+	apps.Post("/:app/:env/backups", canDeploy, handler.CreateBackup)
+	apps.Post("/:app/:env/backups/:id/restore", canDeploy, handler.RestoreBackup)
+	apps.Delete("/:app/:env/backups/:id", canDeploy, handler.DeleteBackup)
 	
 	api.All("/*", func(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{

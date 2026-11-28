@@ -140,6 +140,9 @@ func (db *DB) createTables() error {
 			domain TEXT UNIQUE NOT NULL,
 			npm_id INTEGER NOT NULL
 		)`,
+		updateChecksTable,
+		backupsTable,
+		backupsIndex,
 	}
 
 	for _, query := range queries {
