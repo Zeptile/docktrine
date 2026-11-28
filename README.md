@@ -1,6 +1,10 @@
 <div align="center">
 
-<img src="docs/assets/banner.svg" alt="Docktrine: deploy apps to your own Docker servers" width="800">
+<img src="web/public/favicon.svg" alt="" width="96">
+
+<h1>Docktrine</h1>
+
+<p>Deploy apps to your own Docker servers from the command line.</p>
 
 [![License: MIT](https://img.shields.io/github/license/Zeptile/docktrine?color=c99a45)](LICENSE)
 ![Go](https://img.shields.io/badge/Go-1.23%2B-00ADD8?logo=go&logoColor=white)
@@ -29,39 +33,32 @@ docktrine rollback prod
 
 ## Features
 
-- 🚢 **Zero-downtime deploys** for single-image apps: if the new container
+- **Zero-downtime deploys** for single-image apps: if the new container
   isn't healthy and routed, the old one keeps serving.
   [Compose apps](docs/manifest.md#compose-apps) restart changed services.
-- 🌿 **Preview environments** for any branch, with an optional expiry.
-- 🔐 **Encrypted secrets** that never live in your repository.
-- 💾 **Volume backups** before setup commands, or before every upgrade if you
+- **Preview environments** for any branch, with an optional expiry.
+- **Encrypted secrets** that never live in your repository.
+- **Volume backups** before setup commands, or before every upgrade if you
   choose, with [restore](docs/operations.md#backups).
-- 📦 **App launcher** for Sentry, Plausible, Uptime Kuma and
+- **App launcher** for Sentry, Plausible, Uptime Kuma and
   [more](docs/launching.md), or any container image or compose file.
-- 🔔 **Update checks** for new commits and image tags.
-- 🖥️ **Web UI** with history, logs, rollbacks, user roles, and logged shells
+- **Update checks** for new commits and image tags.
+- **Web UI** with history, logs, rollbacks, user roles, and logged shells
   into containers and servers.
 
-<table>
-  <tr>
-    <th width="50%">Deployment history and logs</th>
-    <th width="50%">Launch an app</th>
-  </tr>
-  <tr>
-    <td valign="top">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/environment-dark.png">
-        <img src="docs/assets/screenshots/environment-light.png" alt="An environment page with its running release, containers, deployment history and deploy log">
-      </picture>
-    </td>
-    <td valign="top">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/launch-dark.png">
-        <img src="docs/assets/screenshots/launch-light.png" alt="The launch page offering known apps and server checks">
-      </picture>
-    </td>
-  </tr>
-</table>
+### Deployment history and logs
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/environment-dark.png">
+  <img src="docs/assets/screenshots/environment-light.png" alt="An environment page with its running release, containers, deployment history and deploy log">
+</picture>
+
+### Launch an app
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/launch-dark.png">
+  <img src="docs/assets/screenshots/launch-light.png" alt="The launch page offering known apps and server checks">
+</picture>
 
 ## How it works
 
