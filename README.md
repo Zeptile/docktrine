@@ -26,10 +26,12 @@ docktrine logs prod -f
 docktrine rollback prod
 ```
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/apps-dark.png">
-  <img src="docs/assets/screenshots/apps-light.png" alt="The web UI listing every environment with its release, hostname, server and recent deploys">
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/apps-dark.png">
+    <img src="docs/assets/screenshots/apps-light.png" alt="The web UI listing every environment with its release, hostname, server and recent deploys" width="720">
+  </picture>
+</p>
 
 ## Features
 
@@ -48,17 +50,21 @@ docktrine rollback prod
 
 ### Deployment history and logs
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/environment-dark.png">
-  <img src="docs/assets/screenshots/environment-light.png" alt="An environment page with its running release, containers, deployment history and deploy log">
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/environment-dark.png">
+    <img src="docs/assets/screenshots/environment-light.png" alt="An environment page with its running release, containers, deployment history and deploy log" width="600">
+  </picture>
+</p>
 
 ### Launch an app
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/launch-dark.png">
-  <img src="docs/assets/screenshots/launch-light.png" alt="The launch page offering known apps and server checks">
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/launch-dark.png">
+    <img src="docs/assets/screenshots/launch-light.png" alt="The launch page offering known apps and server checks" width="600">
+  </picture>
+</p>
 
 ## How it works
 
