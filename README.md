@@ -1,11 +1,23 @@
-# Docktrine
+<div align="center">
 
-Deploy apps to your own Docker servers from the command line.
+<img src="web/public/favicon.svg" alt="" width="96">
 
-Each repository describes what it needs in a `docktrine.yaml`. Then
-`docktrine deploy prod` builds the image, pushes it to your registry, starts
-it on the right node with zero downtime, and points its hostnames at it
-through Nginx Proxy Manager.
+<h1>Docktrine</h1>
+
+<p>Deploy apps to your own Docker servers from the command line.</p>
+
+[![License: MIT](https://img.shields.io/github/license/Zeptile/docktrine?color=c99a45)](LICENSE)
+![Go](https://img.shields.io/badge/Go-1.23%2B-00ADD8?logo=go&logoColor=white)
+![Svelte](https://img.shields.io/badge/UI-Svelte_5-FF3E00?logo=svelte&logoColor=white)
+![Docker](https://img.shields.io/badge/runs_on-Docker-2496ED?logo=docker&logoColor=white)
+
+[Quick start](#quick-start) · [docktrine.yaml](docs/manifest.md) · [CLI](docs/cli.md) · [Gateway setup](deploy/README.md)
+
+</div>
+
+Describe an app in a `docktrine.yaml`, and one command builds its image, pushes
+it to your registry, starts it on the right server and points its hostnames at
+it through Nginx Proxy Manager.
 
 ```sh
 docktrine deploy dev           # build, push, deploy, route hostnames
@@ -14,485 +26,116 @@ docktrine logs prod -f
 docktrine rollback prod
 ```
 
-A web UI shows every app, its deployment history and logs, and lets you
-redeploy, roll back, manage secrets and nodes. It also launches apps you
-didn't write, from a container image or a compose stack in any public Git
-repository.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/apps-dark.png">
+    <img src="docs/assets/screenshots/apps-light.png" alt="The web UI listing every environment with its release, hostname, server and recent deploys" width="760">
+  </picture>
+</p>
 
-## Contents
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/environment-dark.png">
+    <img src="docs/assets/screenshots/environment-light.png" alt="Deployment history of an environment beside the log of a deploy" width="376">
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/launch-dark.png">
+    <img src="docs/assets/screenshots/launch-light.png" alt="Known apps ready to launch, such as Uptime Kuma, Plausible and Sentry" width="376">
+  </picture>
+</p>
 
-- [How it works](#how-it-works)
-- [Quick start](#quick-start)
-- [docktrine.yaml](#dockertrineyaml)
-- [Secrets](#secrets)
-- [Launching from the UI](#launching-from-the-ui)
-- [Shells](#shells)
-- [CLI reference](#cli-reference)
-- [Server configuration](#server-configuration)
-- [Development](#development)
+<p align="center">
+  <sub>Every environment at a glance, the log of each deploy, and ready-made setups for known apps.</sub>
+</p>
+
+## Features
+
+- **Zero-downtime deploys** for single-image apps: if the new container
+  isn't healthy and routed, the old one keeps serving.
+  [Compose apps](docs/manifest.md#compose-apps) restart changed services.
+- **Preview environments** for any branch, with an optional expiry.
+- **Encrypted secrets** that never live in your repository.
+- **Volume backups** before setup commands, or before every upgrade if you
+  choose, with [restore](docs/operations.md#backups).
+- **App launcher** for Sentry, Plausible, Uptime Kuma and
+  [more](docs/launching.md), or any container image or compose file.
+- **Update checks** for new commits and image tags.
+- **Web UI** with history, logs, rollbacks, user roles, and logged shells
+  into containers and servers.
 
 ## How it works
 
-```
- developer laptop / CI                     gateway
- ┌──────────────────┐   HTTPS + API key   ┌───────────────────────────────┐
- │ docktrine CLI    │────────────────────▶│ Docktrine (API + UI)          │
- │ docker buildx    │                     │ Nginx Proxy Manager           │
- └────────┬─────────┘                     └──────┬──────────────┬─────────┘
-          │ push                                 │ ssh          │ proxy hosts
-          ▼                                      ▼              ▼
- ┌──────────────────┐   pull      ┌─────────────────────────────────────────┐
- │ central registry │────────────▶│ node: Docker + Traefik ingress          │
- └──────────────────┘             │   routes by hostname to app containers  │
-                                  └─────────────────────────────────────────┘
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-dark.svg">
+    <img src="docs/assets/architecture.svg" alt="The CLI pushes images to a registry and calls the Docktrine server on the gateway. Docktrine deploys to each node over SSH, and Nginx Proxy Manager forwards visitors to the node's Traefik ingress." width="760">
+  </picture>
+</p>
 
-- **Apps and environments.** An app is one repository. It has environments
-  such as `dev` and `prod`, and each environment runs on one node. Every
-  deploy is recorded with who made it, so any earlier version can be
-  redeployed.
-- **Nodes.** Docktrine reaches each node's Docker daemon over SSH
-  (`ssh://user@host`), or over a `unix://` or `tcp://` host. A node over SSH
-  needs only Docker and an SSH user: no agent and no exposed Docker port.
-- **One ingress per node.** Each node runs a Traefik container that routes
-  requests by hostname to app containers, configured through container
-  labels. The gateway's Nginx Proxy Manager (NPM) forwards every hostname of
-  a node to that node's one ingress port, so adding an app never needs a new
-  tunnel or port.
-- **Hostnames and certificates.** Docktrine creates an NPM proxy host for
-  each hostname, with a Let's Encrypt certificate or an existing wildcard
-  certificate. It removes them when the environment is destroyed. DNS must
-  already point the hostnames at the gateway. A wildcard record such as
-  `*.dev.zeptile.software` covers every app.
-- **Zero-downtime deploys.** The new container starts next to the old one.
-  The old one stops only after the new one passes its health check and the
-  ingress routes traffic to it. If either step fails, the new container is
-  removed and the old one keeps serving. A successful deploy means its
-  hostnames answer.
-
-Containers that Docktrine creates carry `docktrine.app` and `docktrine.env`
-labels, so they are easy to tell apart from containers started by hand.
+A node reached over SSH needs only Docker and an SSH user: no agent and no
+exposed Docker port. Each node runs one Traefik ingress that routes by hostname,
+so adding an app never needs a new tunnel or port.
+[More on how deploys work](docs/operations.md#how-deploys-work).
 
 ## Quick start
 
-You need a Docktrine server on your gateway. See
-[deploy/README.md](deploy/README.md) for setup.
+You need a Docktrine server on your gateway ([setup guide](deploy/README.md)),
+and Go 1.23+ and Docker with `buildx` on your machine.
 
-**On your machine:**
-
-1. **Install the CLI.** Run `./build.sh cli`, which builds binaries for macOS
-   and Linux into `dist/`. Put the one for your machine on your `PATH` as
-   `docktrine`.
-2. **Point it at the server** with an API key that someone created for you
-   (`docktrine keys create <your-name>`):
+1. **Install the CLI.** This builds macOS and Linux binaries into `dist/`; put
+   yours on your `PATH` as `docktrine`.
 
    ```sh
-   export DOCKTRINE_API_URL=https://docktrine.zeptile.software
+   git clone https://github.com/Zeptile/docktrine.git && cd docktrine
+   ./build.sh cli
+   sudo install dist/docktrine-linux-amd64 /usr/local/bin/docktrine  # pick your platform
+   ```
+
+2. **Connect to your server.** Create an API key on your Account page in the web
+   UI (ask an admin for an invite if you can't sign in).
+
+   ```sh
+   export DOCKTRINE_API_URL=https://docktrine.example.com
    export DOCKTRINE_API_KEY=dkt_...
    ```
 
-3. **Log in to your registry** with `docker login <registry>`. The CLI builds
-   and pushes images from your machine with `docker buildx`.
-4. **Write a manifest.** In a repository, run `docktrine init`. It writes a
-   `docktrine.yaml`, using your compose file if it finds one. Review the
-   nodes and hostnames.
-5. **Deploy.** Run `docktrine deploy dev`.
+3. **Log in to your registry** with `docker login <registry>`.
 
-## docktrine.yaml
+4. **Write a manifest.** In your app's repository, run `docktrine init`, then
+   set the node and hostnames. A small one looks like this:
 
-```yaml
-app: invoicer                  # lowercase letters, digits and dashes
+   ```yaml
+   app: invoicer
+   build:
+     dockerfile: Dockerfile
+   environments:
+     prod:
+       node: prd1                      # a server name in Docktrine
+       hostnames: [invoicer.example.com]
+       port: 8080
+       secrets: [DATABASE_URL]
+       healthcheck: /healthz
+   ```
 
-# Exactly one of build, image or compose:
-build:
-  dockerfile: Dockerfile       # default: Dockerfile
-  context: .                   # default: .
-  platform: linux/amd64        # default: linux/amd64
-  args:
-    NODE_ENV: production
-# image: ghcr.io/acme/tool:1.4  # run a prebuilt image instead
-# compose: docker-compose.yml   # see "Compose apps" below
+5. **Set secrets and deploy.**
 
-environments:
-  dev:
-    node: onsite               # a server name in Docktrine
-    hostnames: [invoicer.dev.zeptile.software]
-    port: 8080                 # container port the hostnames route to
-    env:
-      LOG_LEVEL: debug
+   ```sh
+   docktrine secrets set prod DATABASE_URL=postgres://...
+   docktrine deploy prod
+   ```
 
-  prod:
-    node: prd1-tor
-    hostnames: [invoicer.zeptile.software, www.invoicer.zeptile.software]
-    port: 8080
-    secrets: [DATABASE_URL, STRIPE_KEY]
-    volumes:
-      - data:/app/data         # named volume, kept across deploys
-    healthcheck: /healthz
-    command: ["node", "server.js", "--cluster"]
+## Documentation
 
-  preview:                     # optional, see "Preview environments"
-    node: onsite
-    hostnames: ["{branch}.invoicer.dev.zeptile.software"]
-    port: 8080
-    ttl: 72h
-```
-
-| Field | Meaning |
+| Guide | What's in it |
 | --- | --- |
-| `node` | The server the environment runs on. Required. |
-| `hostnames` | Public hostnames. Requires `port`, or `expose` for compose apps. |
-| `port` | The port the app listens on inside the container. |
-| `env` | Plain environment variables, committed with the repository. |
-| `secrets` | Names of secrets to inject as environment variables. Values live in Docktrine, never in the repository. Only the names listed here are injected. |
-| `volumes` | `name:/path` creates a named volume scoped to the environment (`data` becomes `invoicer-prod-data`) and keeps it across deploys. `/host/path:/path` bind-mounts a directory on the node. |
-| `healthcheck` | An HTTP path that must answer successfully before the new version takes traffic. Docktrine runs `wget` or `curl` inside the container, so the image needs one of them. Distroless and scratch images have neither. Without a health check, the container only has to stay up for 10 seconds. |
-| `command` | Overrides the image's command. |
-| `backup` | When deploys back up the volumes first, and how many backups to keep. See [Backups](#backups). |
-| `ttl` | Preview environments only. How long a preview lives after its last deploy, e.g. `72h`. |
-
-Paths in the file, such as the build context and compose file, are relative to
-`docktrine.yaml`. Unknown fields are rejected, so a typo fails loudly.
-
-### Images and tags
-
-With `build`, `docktrine deploy` builds and pushes `<registry>/<app>:<tag>`.
-The registry comes from the server's configuration. The tag defaults to the
-short git commit, with `-dirty` added when there are uncommitted changes.
-`--tag` sets it explicitly.
-
-`--no-build` deploys a tag that has already been pushed. For example, you can
-deploy to prod exactly what you tested on dev.
-
-### Compose apps
-
-```yaml
-app: analytics
-compose: docker-compose.yml
-expose:
-  service: web                 # the service hostnames route to
-  port: 3000
-environments:
-  prod:
-    node: prd1-tor
-    hostnames: [analytics.zeptile.software]
-    env:
-      REDIS_PASSWORD: ...      # available as ${REDIS_PASSWORD} in the compose file
-    secrets: [DATABASE_URL]
-```
-
-Docktrine runs `docker compose up` on the node with your compose file plus an
-override that adds its labels and routing. `env` and `secrets` are available
-to the compose file as `${VAR}`, and they are also set on the exposed service.
-Only services whose configuration changed are recreated. The deploy succeeds
-once the ingress routes to the exposed service.
-
-Compose stops a container before starting its replacement. A changed service
-is therefore briefly down during a deploy, unlike single-image apps.
-
-### Preview environments
-
-An app with a `preview` environment can deploy any branch as its own
-temporary environment:
-
-```sh
-git checkout feature/login
-docktrine deploy preview       # → preview-feature-login
-docktrine destroy preview      # or let the ttl expire
-```
-
-`{branch}` in a hostname becomes the branch name in DNS-safe form, so
-`feature/login` becomes `feature-login`. Each deploy restarts the `ttl`. When
-it runs out, the preview is removed within about ten minutes, volumes
-included. All previews of an app share the secrets set on `preview`.
-
-## Secrets
-
-```sh
-docktrine secrets set prod DATABASE_URL=postgres://... STRIPE_KEY=sk_live_...
-docktrine secrets list prod
-docktrine secrets unset prod STRIPE_KEY
-```
-
-Values are encrypted with AES-256-GCM on the server and are never shown
-again. `list` shows names only. Changes take effect on the next deploy. A
-deploy that needs a secret which isn't set fails immediately, before touching
-the running version. The Secrets tab of an environment in the UI flags any
-missing secrets.
-
-## Launching from the UI
-
-Apps you didn't write, such as Sentry, Plausible or Uptime Kuma, don't need a
-repository of your own or a `docktrine.yaml`. Under **Apps → Launch an app**,
-pick one of:
-
-- **Container image**, e.g. `postgres:16`. Docktrine reads the image's
-  config from its registry, fills in the port, and points out where it keeps
-  data so you can put that in a volume.
-- **Compose from Git**, a public repository such as
-  `https://github.com/getsentry/self-hosted`. You can paste the address of a
-  branch, tag or file from your browser. Docktrine reads the stack, suggests
-  the service hostnames route to, and lists every variable the stack reads,
-  with the defaults from its `.env` and descriptions from its comments.
-- **Paste compose**, for a single compose file.
-
-Or start from a **known app**: Uptime Kuma, n8n, Gitea, Umami, Plausible or
-Sentry. Picking one fills the form with a pinned, tested version, the service
-and port to route to, volumes, the setup command, and the variables it needs,
-with which are required and which are secrets. Variables like Plausible's
-`BASE_URL` follow the first hostname you give. Everything stays editable. The
-known apps are also in the **Go to** palette (Ctrl+K) as "Launch Sentry" and so
-on, and at `#/launch/<name>`.
-
-The catalog is `internal/catalog/presets.yaml`, built into the server and
-served at `GET /api/catalog`. To add an app, copy an entry of the same kind,
-pin it to a released tag, launch it once, and check it against its upstream
-with `DOCKTRINE_CATALOG_LIVE=1 go test ./internal/catalog/`. The plain
-`go test` keeps every entry well-formed.
-
-Variables can be stored as encrypted secrets with the lock next to each one.
-Credentials such as `*_PASSWORD` and `*_TOKEN` are locked by default.
-Next to each secret is a dice button that fills in a random value, made in
-your browser with `crypto.getRandomValues`. It is 32 letters and digits, 50
-for names like `SECRET_KEY`, or hex or base64 when the stack's comments or
-`.env.example` suggest that. The value is shown so you can copy it, since it
-isn't shown again after launch. When several secrets are empty, one button
-generates them all. When you reconfigure an app, the button asks before it
-replaces a stored secret, because the app may already be using the old one.
-
-Each deploy of a stack from Git fetches the repository at the given branch,
-tag or commit and records the commit it ran, so redeploying or rolling back
-to that deployment runs exactly that commit again. The repository's files go
-to the node, into `/var/lib/docktrine/stacks/<app>-<env>`, so the configs it
-mounts with relative paths (`./nginx.conf:/etc/nginx/nginx.conf`) work there.
-Docktrine adds and replaces files in that directory but never deletes any,
-since stacks often keep data next to their compose file. Destroying the
-environment with the volumes deleted removes the directory too.
-
-**Configure** on an environment opens the same form, filled in from what
-runs now, to change and redeploy it. An app deployed with the CLI can be
-changed there too, but its next CLI deploy replaces those changes.
-
-Before a launch, the form checks the chosen server and shows the results beside
-the Launch button. The checks update as the form changes.
-
-- **Resources.** Memory, CPUs and the Docker version are checked against what
-  the stack needs. The minimums come from its install script: Sentry's
-  `install/_min-requirements.sh` asks for 14000 MB and 4 CPUs, or 7000 MB and
-  2 CPUs with `COMPOSE_PROFILES=errors-only`. The memory and CPUs its compose
-  services reserve are checked too.
-- **Ports.** Ports the stack publishes on the server are checked against other
-  containers and other processes listening there.
-- **Hostnames.** With hostnames, the server's ingress must be running, the
-  server must have an ingress host and port for the gateway, and Nginx Proxy
-  Manager must be configured.
-
-A failed check stops the launch unless you choose to launch anyway. Warnings
-don't stop it.
-
-### Setup commands
-
-Some stacks need a step before `docker compose up`. Sentry's `install.sh`,
-for example, creates its configuration, builds images and migrates its
-database. A stack from Git can have a **setup command** for this. When the
-repository has an `install.sh`, the form fills it in, with whichever of its
-options keep it from stopping to ask questions. For Sentry it also offers to
-create the first user from `SENTRY_ADMIN_EMAIL` and `SENTRY_ADMIN_PASSWORD`.
-
-The command runs on the node before the services start, in the stack's
-directory there, in a `docker:cli` container with bash, the node's Docker,
-and the environment's variables and secrets. `COMPOSE_PROJECT_NAME` is set
-to `<app>-<env>`, the project Docktrine runs the stack as, whatever the
-stack's own `.env` says. The command stops at the first step that fails, and
-the deploy fails with it, before anything restarts. Its output goes to the
-deploy log.
-
-It runs on the first deploy, and again whenever the stack's commit or the
-command changes, which is when install scripts expect to run. It can also
-run on every deploy, or on one deploy when you ask for it under Configure.
-
-Files the command creates in the stack's directory stay there across
-deploys. Files from the repository are copied there again on each deploy,
-so a command shouldn't edit them: anything it changed would be overwritten
-while the setup command doesn't run again for the same commit.
-
-### Updates
-
-Docktrine looks for newer versions of what each environment runs: new
-commits on a stack's branch, or on its tag if the tag was moved, and newer
-images behind tags like `latest` or `16`, for apps and for the services of
-compose stacks. A stack pinned to a commit, and images pinned by digest,
-never update. Previews and images built on the node aren't checked.
-
-Checks run in the background every six hours, and when you press **Check
-now** on an environment. They ask Git with `git ls-remote` and registries
-with a `HEAD` request for the tag's digest, which doesn't count against
-Docker Hub's pull limit. Requests to the same host are spaced out, a host
-that answers "too many requests" is left alone for as long as it asks, and
-a check that fails waits longer each time before it runs again. For GitHub
-and Codeberg, the update panel says how many commits are new and links to
-the changes.
-
-The apps list marks environments with an update, and the environment page
-shows what changes. **Update** deploys the running settings again at the
-newest version, as an ordinary deployment with its log, and a rollback to
-go back. For a stack with a setup command, a new commit runs the command
-again, which the page warns about: a migration it runs isn't undone by
-rolling back.
-
-### Backups
-
-Rolling back redeploys older code, but it can't undo a database migration.
-So before a setup command runs, Docktrine backs up the environment first:
-
-- **What.** Every named volume of the environment: the ones compose creates
-  for the `<app>-<env>` project, and `name:/path` volumes of image apps. For
-  stacks from Git, the stack's directory on the node too, since stacks keep
-  configuration there (Sentry's generated config, for example). Directories
-  on the node that containers mount, and volumes the environment didn't
-  create, are listed as not backed up and left alone.
-- **How.** A `busybox` helper container on the node writes one gzipped
-  tarball per volume into `/var/lib/docktrine/backups/<app>-<env>/<time>/`,
-  readable only by root. This works over SSH like everything else. The
-  environment's containers are stopped while it runs, so databases are
-  copied whole, and started again after. The deploy log shows the sizes and
-  how long each step took. If the node doesn't have room for the backup, the
-  deploy fails before changing anything.
-- **When.** Configure sets it per environment under Setup (or Backups for
-  apps without one): before setup commands (the default), also before every
-  deploy that changes the version, meaning another image or digest, a newer
-  image behind a tag like `latest`, or another commit, or never. **Back up
-  now** on the environment's Backups tab takes one on demand.
-- **Keeping.** The last 5 per environment are kept, or the number set under
-  Configure. The newest backup that finished is never deleted automatically.
-- **Restoring.** Restore on the Backups tab stops the environment and
-  replaces its volumes with the backup's. It then redeploys what ran when
-  the backup was taken, so the code matches the data, or keeps what runs now
-  if you choose.
-
-Destroying an environment keeps its backups, even when its volumes are
-deleted, unless you choose to delete them too. Deploying the environment
-again shows them, so a purged environment can still be restored. Previews
-that expire take their backups with them.
-
-In `docktrine.yaml`, an environment can set the same:
-
-```yaml
-environments:
-  prod:
-    backup:
-      before: upgrade          # setup (default), upgrade or never
-      keep: 10
-```
-
-## Shells
-
-The UI can open a terminal in a running container, or on a server itself.
-
-- **In a container.** From an environment's **Shell** tab, which lists its
-  running services, or from the terminal icon on a running container under
-  Containers. It runs `docker exec` with bash if the container has it, else
-  sh, as the container's default user. This needs the deployer role.
-- **On a server.** From **Shell** on the server under Servers. This is a root
-  shell on the host, so it needs the admin role. Docktrine starts a
-  privileged helper container in the host's process namespace
-  (`busybox`, labelled `docktrine.role=helper`) that enters the host's
-  namespaces with `nsenter`. It works over SSH like everything else.
-
-A shell ends when you close it or leave the page, and after 30 minutes
-without input or 12 hours in all. Anything still running in it is stopped,
-and a server shell's helper container is removed. If the API stops
-mid-session, it removes the helpers it left behind when it starts again;
-any helper older than 12 hours is removed regardless.
-
-Every shell opened and closed is logged with who opened it, where, and for
-how long. Shells are WebSockets at `/api/containers/<id>/shell?server=` and
-`/api/servers/<name>/shell`, and the API refuses ones started by another
-site. Behind a reverse proxy, the proxy must pass WebSocket upgrades and
-keep the `Host` header, or set `X-Forwarded-Host`.
-
-## CLI reference
-
-Every command talks to the server named by `DOCKTRINE_API_URL`, using
-`DOCKTRINE_API_KEY`. You can also pass `--api-url` and `--api-key`.
-
-App commands read the app name from `docktrine.yaml` in the current
-directory, or take `--app`. Preview commands target the current git branch,
-or `--branch`.
-
-| Command | What it does |
-| --- | --- |
-| `init [name]` | Write a starting `docktrine.yaml`. |
-| `deploy <env>` | Build, push and deploy. Flags: `--tag`, `--no-build`, `--branch`, `--detach`. |
-| `status` | What runs where, for this app. `--all` shows every app. |
-| `history <env>` | Deployments of an environment, newest first. |
-| `logs <env>` | Container logs. `-f` follows, `--tail N` limits lines. |
-| `rollback <env>` | Redeploy the previous successful version. |
-| `destroy <env>` | Remove containers and hostnames. `--purge` also deletes volumes. |
-| `secrets list\|set\|unset <env>` | See [Secrets](#secrets). |
-| `servers list\|add\|update\|remove` | Manage nodes. |
-| `servers health <name>` | Check that a node is reachable, and its Docker and ingress status. |
-| `servers ingress <name>` | Install or update the node's Traefik. `--port` (default 8880), `--bind`. |
-| `servers prune <name>` | Remove dangling images. `--all` removes every image no container uses, including ones Docktrine didn't create. |
-| `keys list\|create\|rename\|revoke` | Manage API keys. See [Users and API keys](deploy/README.md#users-and-api-keys). |
-| `containers list\|start\|stop\|restart` | Act on individual containers of a node directly. |
-
-## Server configuration
-
-The server reads its settings from environment variables. The template with
-comments is [deploy/.env.example](deploy/.env.example).
-
-| Variable | Purpose |
-| --- | --- |
-| `DOCKTRINE_REGISTRY` | Registry every node pulls from and the CLI pushes to. |
-| `DOCKTRINE_REGISTRY_USER`, `DOCKTRINE_REGISTRY_PASSWORD` | Registry login, if pulls need one. |
-| `DOCKTRINE_NPM_URL`, `DOCKTRINE_NPM_EMAIL`, `DOCKTRINE_NPM_PASSWORD` | NPM admin API, used to create proxy hosts and certificates. |
-| `DOCKTRINE_LETSENCRYPT_EMAIL` | Contact address for new Let's Encrypt certificates. |
-| `DOCKTRINE_NPM_CERTIFICATE_ID` | Optional. Reuse an existing certificate, such as a wildcard, instead of requesting one per hostname. |
-| `DOCKTRINE_SECRET_KEY` | Master key for secrets: 64 hex characters from `openssl rand -hex 32`. If unset, Docktrine generates `data/secret.key` on first start. Losing this key means losing every stored secret. |
-| `CONFIG_PATH` | Where the database and keys are kept. Defaults to `data`. |
-| `DOCKTRINE_STACKS_DIR` | Where nodes keep the files of compose stacks launched from Git. Defaults to `/var/lib/docktrine/stacks`. |
-| `DOCKTRINE_UPDATE_INTERVAL` | How often to check environments for updates, e.g. `12h`. Defaults to `6h`; `off` leaves only the checks you ask for. |
-| `DOCKTRINE_BACKUPS_DIR` | Where nodes keep backups of volumes. Defaults to `/var/lib/docktrine/backups`. |
-| `DOCKTRINE_BACKUPS_KEEP` | How many backups each environment keeps, unless it sets its own. Defaults to `5`. |
-| `PORT` | Port the API and UI listen on. Defaults to `3000`. |
-
-## Development
-
-Prerequisites: Go 1.23+, Node.js 18+, and Docker.
-
-```sh
-go run ./cmd/api                        # API and built UI on :3000
-cd web && npm install && npm run dev    # UI with hot reload on :5173
-go run ./cmd/cli status                 # the CLI, against DOCKTRINE_API_URL
-go test ./...
-```
-
-- The dev UI proxies `/api` to `http://localhost:3000`. Set
-  `DOCKTRINE_API_PROXY` to proxy to another API.
-- On first start the API creates an API key and writes it to
-  `data/initial-api-key`.
-- API documentation is served at `/api/swagger`. After changing handler
-  annotations, regenerate it with `./swagger-gen.sh`.
-- `./build.sh` builds the UI, API and CLI for this machine. `./build.sh cli`
-  cross-compiles the CLI. `./build.sh image` builds the server image.
-
-### Project layout
-
-| Path | Contents |
-| --- | --- |
-| `cmd/api` | HTTP API (Fiber) and the UI's static files |
-| `cmd/cli` | The `docktrine` CLI (Cobra) |
-| `internal/manifest` | `docktrine.yaml` parsing and resolution |
-| `internal/deploy` | Deploy engine: single-image swaps, compose, ingress, previews |
-| `internal/catalog` | Known apps for the launch form |
-| `internal/console` | Shells in containers and on nodes, over WebSockets |
-| `internal/npm` | Nginx Proxy Manager API client |
-| `internal/secrets` | Secret encryption |
-| `internal/database` | SQLite storage |
-| `web` | Svelte UI |
-| `deploy` | Running Docktrine on the gateway |
+| [docktrine.yaml](docs/manifest.md) | Every field, images, Compose apps, previews, secrets |
+| [Launching apps](docs/launching.md) | Known apps, Git stacks, preflight checks, setup commands, updates |
+| [Operations](docs/operations.md) | How deploys work, backups and restores, shells |
+| [CLI reference](docs/cli.md) | Commands and their main flags |
+| [Gateway setup](deploy/README.md) | Installing the server, users and API keys |
+| [Server configuration](docs/server.md) | Environment variables |
+| [Development](docs/development.md) | Running locally, tests, project layout |
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+[MIT](LICENSE)

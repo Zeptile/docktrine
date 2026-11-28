@@ -12,22 +12,22 @@ set -e
 cd "$(dirname "$0")"
 
 build_local() {
-	echo "📦 Building web UI..."
+	echo "Building web UI..."
 	(cd web && npm install --silent && npm run build)
 
-	echo "🚀 Building API server..."
+	echo "Building API server..."
 	go build -o bin/docktrine-api ./cmd/api
 
-	echo "🔧 Building CLI..."
+	echo "Building CLI..."
 	go build -o bin/docktrine ./cmd/cli
 
-	echo "✅ Build complete!"
+	echo "Build complete!"
 	echo ""
-	echo "🌟 To run Docktrine:"
+	echo "To run Docktrine:"
 	echo "   ./bin/docktrine-api"
 	echo ""
-	echo "🌐 Web UI will be available at: http://localhost:3000"
-	echo "📚 API docs will be available at: http://localhost:3000/api/swagger"
+	echo "Web UI will be available at: http://localhost:3000"
+	echo "API docs will be available at: http://localhost:3000/api/swagger"
 }
 
 build_cli() {
@@ -36,18 +36,18 @@ build_cli() {
 	for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
 		os=${target%/*}
 		arch=${target#*/}
-		echo "🔧 Building CLI for $os/$arch..."
+		echo "Building CLI for $os/$arch..."
 		CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w" \
 			-o "dist/docktrine-$os-$arch" ./cmd/cli
 	done
-	echo "✅ CLI binaries in dist/"
+	echo "CLI binaries in dist/"
 }
 
 build_image() {
 	image=${IMAGE:-docktrine:latest}
-	echo "🐳 Building $image for linux/amd64..."
+	echo "Building $image for linux/amd64..."
 	docker build --platform linux/amd64 -t "$image" .
-	echo "✅ Built $image. Push it with: docker push $image"
+	echo "Built $image. Push it with: docker push $image"
 }
 
 case "${1:-local}" in
