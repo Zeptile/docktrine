@@ -4,9 +4,10 @@
     api,
     type EnvironmentDetail,
     type Deployment,
+    type BackupList,
     ApiError,
   } from "$lib/api";
-  import { timeAgo, timeUntil, duration, shortImage } from "$lib/format";
+  import { timeAgo, timeUntil, duration, shortImage, bytes } from "$lib/format";
   import { confirmAction } from "$lib/confirm";
   import { toast } from "$lib/toast";
   import { can } from "$lib/session";
@@ -17,6 +18,7 @@
   import Gauge from "./Gauge.svelte";
   import SecretsPanel from "./SecretsPanel.svelte";
   import LogsPanel from "./LogsPanel.svelte";
+  import BackupsPanel from "./BackupsPanel.svelte";
   import {
     ExternalLink,
     RefreshCw,
@@ -36,6 +38,7 @@
     { id: "history", label: "Deployments" },
     { id: "logs", label: "Logs" },
     { id: "secrets", label: "Secrets" },
+    { id: "backups", label: "Backups" },
   ];
   $: activeTab = tabs.some((t) => t.id === tab) ? tab : "history";
   $: base = `#/apps/${encodeURIComponent(app)}/${encodeURIComponent(env)}`;
@@ -52,6 +55,19 @@
   let showDestroy = false;
   let destroyConfirm = "";
   let destroyPurge = false;
+  // Backups outlive the environment unless these go too
+  let destroyBackups = false;
+  let backupList: BackupList | null = null;
+  $: keptBackups = backupList?.backups.filter((b) => b.status === "succeeded") ?? [];
+
+  async function openDestroy() {
+    showDestroy = true;
+    try {
+      backupList = await api.apps.backups.list(app, env);
+    } catch {
+      backupList = null;
+    }
+  }
 
   let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -150,7 +166,7 @@
     acting = true;
     error = null;
     try {
-      await api.apps.destroy(app, env, destroyPurge);
+      await api.apps.destroy(app, env, destroyPurge, destroyBackups);
       toast(`${app}/${env} destroyed`);
       location.hash = "#/apps";
     } catch (e) {
@@ -385,6 +401,19 @@
     <LogsPanel {app} {env} />
   {:else if activeTab === "secrets"}
     <SecretsPanel {app} {env} required={current?.spec?.secrets ?? []} />
+  {:else if activeTab === "backups"}
+    <BackupsPanel
+      {app}
+      {env}
+      {current}
+      server={environment?.server}
+      deploying={active}
+      onredeploy={(dep) => {
+        selectedId = dep.id;
+        location.hash = base;
+        load();
+      }}
+    />
   {/if}
 
   {#if $can("deployer")}
@@ -397,7 +426,7 @@
           <Button
             variant="ghost"
             class="text-destructive hover:text-destructive hover:bg-destructive/10"
-            onclick={() => (showDestroy = true)}
+            onclick={openDestroy}
             disabled={acting || active}
             title={active ? "Wait for the deployment in progress to finish" : undefined}
           >
@@ -409,12 +438,31 @@
           <h2 class="section-title">Destroy <span class="engraved text-lg font-normal">{app}/{env}</span></h2>
           <p class="text-sm text-muted-foreground mt-1 mb-5 max-w-2xl">
             Removes its containers from {environment?.server}, its hostnames from the gateway, and its deployment
-            history. Secrets are kept, so deploying {env} again picks them back up.
+            history. Secrets and backups are kept, so deploying {env} again picks them back up.
           </p>
           <label class="flex items-start gap-2.5 text-sm mb-5">
             <input type="checkbox" bind:checked={destroyPurge} class="w-4 h-4 mt-0.5 accent-[rgb(var(--danger))]" />
-            <span>Also delete its volumes. <span class="text-destructive">The data in them can't be recovered.</span></span>
+            <span>
+              Also delete its volumes.
+              {#if keptBackups.length && !destroyBackups}
+                <span class="text-muted-foreground">Its backups are kept, so the data can be restored by deploying {env} again.</span>
+              {:else}
+                <span class="text-destructive">The data in them can't be recovered.</span>
+              {/if}
+            </span>
           </label>
+          {#if backupList?.backups.length}
+            <label class="flex items-start gap-2.5 text-sm mb-5">
+              <input type="checkbox" bind:checked={destroyBackups} class="w-4 h-4 mt-0.5 accent-[rgb(var(--danger))]" />
+              <span>
+                Also delete its {backupList.backups.length === 1 ? "backup" : `${backupList.backups.length} backups`}
+                ({bytes(backupList.backups.reduce((n, b) => n + b.size, 0))} in <span class="font-mono text-[13px] break-all">{backupList.dir}</span>).
+                <span class="block hint mt-0.5">
+                  Otherwise they stay on {environment?.server}, and show up here again if {app}/{env} is deployed again.
+                </span>
+              </span>
+            </label>
+          {/if}
           <label for="destroy-confirm" class="label">Type <span class="font-mono">{env}</span> to confirm</label>
           <div class="flex flex-wrap gap-2 max-w-xl">
             <input id="destroy-confirm" bind:value={destroyConfirm} class="input font-mono flex-1 min-w-48" autocomplete="off" />

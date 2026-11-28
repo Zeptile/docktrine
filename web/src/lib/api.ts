@@ -118,6 +118,62 @@ export interface Spec {
   preview?: boolean;
   branch?: string;
   ttl?: string;
+  // When deploys back up the volumes first; before setup commands when left out
+  backup?: { before?: BackupPolicy; keep?: number };
+}
+
+export type BackupPolicy = "setup" | "upgrade" | "never";
+
+export interface BackupItem {
+  kind: "volume" | "stack";
+  // The volume, or the stack directory's path on the server
+  name: string;
+  file: string;
+  size: number;
+  archive_size: number;
+}
+
+export interface SkippedMount {
+  type: string;
+  source: string;
+  target: string;
+  container?: string;
+  reason: string;
+}
+
+export interface Backup {
+  id: number;
+  app: string;
+  environment: string;
+  server: string;
+  // Its directory on the server
+  path: string;
+  // Reads after "since"
+  reason: string;
+  status: "running" | "succeeded" | "failed";
+  message?: string;
+  // What ran when it was taken
+  deployment_id?: number;
+  spec?: Spec;
+  // The deploy that took it
+  triggered_by?: number;
+  items: BackupItem[];
+  skipped: SkippedMount[];
+  size: number;
+  created_by?: string;
+  created_at: string;
+  finished_at?: string;
+  restored_at?: string;
+}
+
+export interface BackupList {
+  backups: Backup[];
+  // The environment's directory on the server
+  dir: string;
+  // How many the server keeps by default
+  keep: number;
+  // A backup or restore in progress
+  busy?: string;
 }
 
 export interface Environment {
@@ -503,11 +559,32 @@ export const api = {
     destroy: (
       app: string,
       env: string,
-      purge: boolean
-    ): Promise<{ message: string }> =>
-      request(`/apps/${enc(app)}/${enc(env)}${purge ? "?purge=true" : ""}`, {
-        method: "DELETE",
-      }),
+      purge: boolean,
+      deleteBackups = false
+    ): Promise<{ message: string }> => {
+      const params = new URLSearchParams();
+      if (purge) params.set("purge", "true");
+      if (deleteBackups) params.set("delete_backups", "true");
+      const query = params.toString() ? `?${params}` : "";
+      return request(`/apps/${enc(app)}/${enc(env)}${query}`, { method: "DELETE" });
+    },
+
+    backups: {
+      list: (app: string, env: string): Promise<BackupList> =>
+        request(`/apps/${enc(app)}/${enc(env)}/backups`),
+      // Starts one; poll the list for how it goes
+      create: (app: string, env: string): Promise<Backup> =>
+        request(`/apps/${enc(app)}/${enc(env)}/backups`, json("POST")),
+      restore: (
+        app: string,
+        env: string,
+        id: number,
+        redeploy: boolean
+      ): Promise<{ backup: Backup; deployment?: Deployment; message: string }> =>
+        request(`/apps/${enc(app)}/${enc(env)}/backups/${id}/restore`, json("POST", { redeploy })),
+      remove: (app: string, env: string, id: number): Promise<{ message: string }> =>
+        request(`/apps/${enc(app)}/${enc(env)}/backups/${id}`, json("DELETE")),
+    },
 
     secrets: {
       list: (app: string, env: string): Promise<SecretInfo[]> =>

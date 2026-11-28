@@ -10,6 +10,7 @@
     type Deployment,
     type Check,
     type PreflightRequest,
+    type BackupPolicy,
   } from "$lib/api";
   import {
     isName,
@@ -89,6 +90,11 @@
   // Filled in from the repository rather than typed
   let setupSuggested = $state(false);
   let setupTouched = false;
+
+  // When deploys back up the volumes first, and how many backups to keep;
+  // the defaults are left out of the spec
+  let backupBefore = $state<BackupPolicy>("setup");
+  let backupKeep = $state<number | null>(null);
 
   // Image only
   let volumes = $state<{ source: string; target: string }[]>([]);
@@ -203,6 +209,8 @@
         if (row && !row.value && !row.stored && !row.stack?.has_default) p.push(`Set ${name}, which the setup command uses.`);
       }
     }
+    if (backupKeep !== null && (backupKeep < 1 || backupKeep > 100 || !Number.isInteger(backupKeep)))
+      p.push("Keep between 1 and 100 backups.");
     if (failedChecks.length && !launchAnyway)
       p.push(`${node} failed ${failedChecks.length === 1 ? "a check" : "checks"} below. Fix ${failedChecks.length === 1 ? "it" : "them"}, or launch anyway.`);
     return p;
@@ -245,6 +253,8 @@
 
     hostnames = [...(spec.hostnames ?? [])];
     port = spec.port || null;
+    backupBefore = spec.backup?.before ?? "setup";
+    backupKeep = spec.backup?.keep || null;
     const storedKeys = new Set(stored.map((s) => s.key));
     rows = [
       ...Object.entries(spec.env ?? {}).map(([key, value]) => newRow({ key, value })),
@@ -417,6 +427,9 @@
     } else {
       spec.compose = composeText;
     }
+    if (backupBefore !== "setup" || backupKeep) {
+      spec.backup = { before: backupBefore !== "setup" ? backupBefore : undefined, keep: backupKeep || undefined };
+    }
     if (hostnames.length) {
       spec.hostnames = [...hostnames];
       spec.port = port ?? undefined;
@@ -482,6 +495,42 @@
     {#if intro}<p class="text-sm text-muted-foreground mt-1.5 max-w-2xl">{intro}</p>{/if}
     <div class="mt-5">{@render body()}</div>
   </section>
+{/snippet}
+
+{#snippet backupChoice(name: string, value: BackupPolicy, label: string, hint: string | null)}
+  <label class="flex items-start gap-2.5">
+    <input type="radio" name="backup-before" checked={backupBefore === value} onchange={() => (backupBefore = value)} class="mt-1 accent-[rgb(var(--brass))]" id="backup-{name}" />
+    <span>
+      {label}
+      {#if hint}<span class="block hint mt-0.5">{hint}</span>{/if}
+    </span>
+  </label>
+{/snippet}
+
+{#snippet backups()}
+  <fieldset>
+    <legend class="label">Back up the volumes</legend>
+    <div class="space-y-2 text-sm">
+      {#if kind === "git"}
+        {@render backupChoice("setup", "setup", "Before the setup command runs", "Its migrations can't be undone by rolling back; a backup is the way back.")}
+        {@render backupChoice("upgrade", "upgrade", "Also before deploys that change the commit or an image", "Including a newer image behind a tag like latest.")}
+        {@render backupChoice("never", "never", "Never on its own", null)}
+      {:else}
+        {@render backupChoice("upgrade", "upgrade", kind === "image" ? "Before deploys that change the image" : "Before deploys that change an image", "Including a newer image behind a tag like latest.")}
+        {@render backupChoice("setup", "setup", "Only when you ask for one", null)}
+      {/if}
+    </div>
+  </fieldset>
+  <div class="mt-4 flex flex-wrap items-center gap-3">
+    <label for="backup-keep" class="text-sm">Keep the last</label>
+    <input id="backup-keep" type="number" min="1" max="100" bind:value={backupKeep} class="input font-mono h-9 w-20" placeholder="5" />
+    <span class="text-sm">backups</span>
+  </div>
+  <p class="hint">
+    The volumes are copied into compressed archives on {node || "the server"}{kind === "git" ? ", with the stack's directory" : ""},
+    with the containers stopped so databases are copied whole. The newest backup that finished is never deleted on its own.
+    Restore one from the environment's Backups tab.
+  </p>
 {/snippet}
 
 {#snippet inspectStatus()}
@@ -846,6 +895,10 @@
               </label>
             {/if}
           {/if}
+
+          <div class="mt-6 pt-5 border-t">
+            {@render backups()}
+          </div>
         {/snippet}
         {@render section(5, "Setup", "Some stacks need a step before they start, like an install script that creates their configuration and migrates their database.", setup)}
       {/if}
@@ -920,6 +973,10 @@
           {/if}
         {/snippet}
         {@render section(5, "Storage and startup", null, advanced)}
+      {/if}
+
+      {#if kind !== "git"}
+        {@render section(kind === "image" ? 6 : 5, "Backups", null, backups)}
       {/if}
     </div>
 
